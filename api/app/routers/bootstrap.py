@@ -85,49 +85,27 @@ CREATE TABLE IF NOT EXISTS {schema}.audit_logs (
   details JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
--- ========= MEMORY TABLES =========
-
--- Rolling short-term summary per thread (encrypted)
-CREATE TABLE IF NOT EXISTS {schema}.thread_summaries (
-  thread_id UUID PRIMARY KEY REFERENCES {schema}.chat_threads(id) ON DELETE CASCADE,
-  summary_enc BYTEA NOT NULL,
-  version INT NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Long-term durable facts, deduped by hash, per member
-CREATE TABLE IF NOT EXISTS {schema}.memory_facts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  fact_hash TEXT NOT NULL UNIQUE,
-  fact_enc BYTEA NOT NULL,
-  source TEXT NOT NULL,           -- e.g. 'thread:<id>', 'doc:<id>'
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
 """
 
 
 def _split_sql(sql: str) -> List[str]:
-    """
-    Naive splitter: splits on ';' and keeps non-empty statements.
-    Good enough for our simple DDL (no PL/pgSQL blocks).
-    """
+    """Split SQL into individual statements for asyncpg."""
     stmts = []
     for part in sql.split(';'):
         s = part.strip()
         if not s:
             continue
-        # put the semicolon back for clarity (optional)
         if not s.endswith(';'):
             s = s + ';'
         stmts.append(s)
     return stmts
 
+
 @router.post("/bootstrap/member-schema")
 async def bootstrap_member_schema(idn: Identity = Depends(get_identity)):
     """
-    Idempotent: creates (or verifies) the per-member schema and all core tables.
-    Executes each DDL statement separately to satisfy asyncpg (no multi-statement prepare).
+    Idempotent: creates the per-member schema and all core tables.
+    Note: thread_summaries and memory_facts tables removed (no longer needed).
     """
     mapping = await fetch_member_mapping(idn.org_id)
     if not mapping:
@@ -141,7 +119,6 @@ async def bootstrap_member_schema(idn: Identity = Depends(get_identity)):
 
     async with engine.begin() as conn:
         for stmt in statements:
-            # exec_driver_sql avoids some SQLAlchemy parsing overhead and is fine for raw DDL
             await conn.exec_driver_sql(stmt)
 
     return {"ok": True, "schema": mapping["schema_name"], "executed": len(statements)}
