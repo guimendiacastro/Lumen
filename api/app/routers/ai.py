@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -12,8 +13,13 @@ from ..db import fetch_member_mapping, member_session
 from ..crypto.vault import encrypt_text, decrypt_text
 from ..llm.clients import fanout_with_history
 from ..utils.debug import dump_messages
+from ..utils.document_processor import expand_unchanged_sections
+from ..utils.edit_commands import generate_edit_system_prompt, apply_edits, EditPlan
+from ..utils.validation import validate_completeness, format_validation_report
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+STRUCTURED_EDITS_ENABLED = os.getenv("STRUCTURED_EDITS", "true").lower() == "true"
 
 MAX_DOC_CHARS = int(os.getenv("MAX_DOC_CHARS", "24000"))
 
@@ -119,11 +125,43 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     schema = mapping["schema_name"]
     key_id = mapping["vault_key_id"]
 
-    system_preamble = (
-        "You are a legal drafting assistant. "
-        "Return exactly ONE draft inside <document>...</document> and nothing else.\n"
-        "If <current_document> exists, modify/extend THAT document based on the user's request."
-    )
+    # Determine if we should use structured edits based on whether doc exists and has real content
+    async with member_session(schema) as s:
+        r = await s.execute(
+            text("SELECT document_id FROM chat_threads WHERE id=:tid"), 
+            {"tid": body.thread_id}
+        )
+        row = r.first()
+    
+    has_document = False
+    if row and row[0] is not None:
+        # Check if document has real content (not just placeholder)
+        doc_id = str(row[0])
+        async with member_session(schema) as s:
+            r = await s.execute(
+                text("SELECT content_enc FROM documents WHERE id=:id"), 
+                {"id": doc_id}
+            )
+            d = r.first()
+        if d:
+            content = await decrypt_text(key_id, d[0])
+            # Check if it's a real document (more than just "New Document" placeholder)
+            stripped = content.strip()
+            if len(stripped) > 50 and not stripped.startswith("# New Document"):
+                has_document = True
+    
+    use_structured_edits = STRUCTURED_EDITS_ENABLED and has_document
+
+    if use_structured_edits:
+        system_preamble = generate_edit_system_prompt()
+    else:
+        system_preamble = (
+            "You are a legal drafting assistant. "
+            "Return exactly ONE draft inside <document>...</document> and nothing else.\n"
+            "IMPORTANT: Always output the COMPLETE document. Never use placeholders like "
+            "'[Sections remain unchanged]' or '[Previous content]'. Always include all sections in full."
+        )
+    
     if body.system:
         system_preamble = body.system.strip() + "\n\n" + system_preamble
 
@@ -170,11 +208,53 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     # Fan-out to all providers
     results = await fanout_with_history(messages)
 
+    # Get current document content for post-processing
+    doc_content = None
+    if doc_block:
+        match = re.search(r'<current_document>\n(.*?)\n</current_document>', doc_block, re.DOTALL)
+        if match:
+            doc_content = match.group(1)
+
     # Store encrypted responses and return cards
     provider_cards: list[ProviderCard] = []
     async with member_session(schema) as s:
         for res in results:
-            text_enc = await encrypt_text(key_id, res["text"])
+            response_text = res["text"]
+            
+            # Post-process based on mode
+            if use_structured_edits and doc_content:
+                # Parse edit commands and apply to current document
+                try:
+                    # Extract JSON if wrapped in markdown code blocks
+                    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        json_str = response_text
+                    
+                    edit_plan = EditPlan.model_validate_json(json_str)
+                    expanded_text = apply_edits(doc_content, edit_plan)
+                except Exception as e:
+                    # If parsing fails, fall back to original behavior
+                    print(f"Failed to parse edit commands: {e}")
+                    expanded_text = expand_unchanged_sections(response_text, doc_content)
+            elif doc_content:
+                # Expand any "unchanged sections" placeholders (legacy mode)
+                expanded_text = expand_unchanged_sections(response_text, doc_content)
+            else:
+                # New document, no post-processing needed
+                expanded_text = response_text
+            
+            # Validate completeness
+            validation_issues = validate_completeness(expanded_text, doc_content)
+            has_errors = any(issue.severity == "error" for issue in validation_issues)
+            
+            # Log validation results if issues found
+            if validation_issues:
+                print(f"Validation issues for {res['provider']}:")
+                print(format_validation_report(validation_issues))
+            
+            text_enc = await encrypt_text(key_id, expanded_text)
             ins = await s.execute(
                 text("""
                     INSERT INTO ai_responses (request_id, provider, text_enc, input_tokens, output_tokens, latency_ms)
@@ -195,7 +275,7 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
                 ProviderCard(
                     id=resp_id,
                     provider=res["provider"],
-                    text=res["text"],
+                    text=expanded_text,
                     latencyMs=res.get("latency_ms"),
                     ok=res.get("ok", True),
                 )
