@@ -16,7 +16,11 @@ from ..utils.debug import dump_messages
 from ..utils.document_processor import expand_unchanged_sections
 from ..utils.edit_commands import generate_edit_system_prompt, apply_edits, EditPlan
 from ..utils.validation import validate_completeness, format_validation_report
+import json
+from ..utils.debug import debug_enabled
+import logging
 
+log = logging.getLogger("lumen.ai")
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 STRUCTURED_EDITS_ENABLED = os.getenv("STRUCTURED_EDITS", "true").lower() == "true"
@@ -218,68 +222,95 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     # Store encrypted responses and return cards
     provider_cards: list[ProviderCard] = []
     async with member_session(schema) as s:
-        for res in results:
-            response_text = res["text"]
-            
-            # Post-process based on mode
-            if use_structured_edits and doc_content:
-                # Parse edit commands and apply to current document
-                try:
-                    # Extract JSON if wrapped in markdown code blocks
-                    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(1)
-                    else:
-                        json_str = response_text
-                    
-                    edit_plan = EditPlan.model_validate_json(json_str)
-                    expanded_text = apply_edits(doc_content, edit_plan)
-                except Exception as e:
-                    # If parsing fails, fall back to original behavior
-                    print(f"Failed to parse edit commands: {e}")
-                    expanded_text = expand_unchanged_sections(response_text, doc_content)
-            elif doc_content:
-                # Expand any "unchanged sections" placeholders (legacy mode)
-                expanded_text = expand_unchanged_sections(response_text, doc_content)
-            else:
-                # New document, no post-processing needed
-                expanded_text = response_text
-            
-            # Validate completeness
-            validation_issues = validate_completeness(expanded_text, doc_content)
-            has_errors = any(issue.severity == "error" for issue in validation_issues)
-            
-            # Log validation results if issues found
-            if validation_issues:
-                print(f"Validation issues for {res['provider']}:")
-                print(format_validation_report(validation_issues))
-            
-            text_enc = await encrypt_text(key_id, expanded_text)
-            ins = await s.execute(
-                text("""
-                    INSERT INTO ai_responses (request_id, provider, text_enc, input_tokens, output_tokens, latency_ms)
-                    VALUES (:rid, :prov, :txt, :in_tok, :out_tok, :lat)
-                    RETURNING id
-                """),
-                {
-                    "rid": request_id,
-                    "prov": res["provider"],
-                    "txt": text_enc,
-                    "in_tok": res.get("input_tokens"),
-                    "out_tok": res.get("output_tokens"),
-                    "lat": res.get("latency_ms"),
-                },
-            )
-            resp_id = str(ins.first()[0])
-            provider_cards.append(
-                ProviderCard(
-                    id=resp_id,
-                    provider=res["provider"],
-                    text=expanded_text,
-                    latencyMs=res.get("latency_ms"),
-                    ok=res.get("ok", True),
-                )
-            )
-        await s.commit()
+                for res in results:
+                    response_text = res.get("text") or ""
+
+                    # --- LOG: raw provider output (exact, before any processing) ---
+                    if debug_enabled():
+                        log.info("=== LLM RESPONSE (raw) :: provider=%s ===\n%s",
+                                res.get("provider", "-"),
+                                response_text)
+
+                    # Post-process based on mode
+                    expanded_text = response_text  # default fallback
+                    parsed_plan = None
+                    parse_error = None
+
+                    if use_structured_edits and doc_content:
+                        try:
+                            # Extract JSON if wrapped in markdown code blocks
+                            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                json_str = json_match.group(1)
+                            else:
+                                json_str = response_text
+
+                            # Parse structured edit plan
+                            parsed_plan = EditPlan.model_validate_json(json_str)
+
+                            # --- LOG: parsed JSON edit plan ---
+                            if debug_enabled():
+                                log.info("=== EDIT PLAN (parsed JSON) :: provider=%s ===\n%s",
+                                        res.get("provider", "-"),
+                                        json.dumps(parsed_plan.model_dump(), indent=2, ensure_ascii=False))
+
+                            # Apply edits to current document
+                            expanded_text = apply_edits(doc_content, parsed_plan)
+
+                        except Exception as e:
+                            parse_error = str(e)
+                            # --- LOG: parsing error (keep going with fallback) ---
+                            log.warning("Failed to parse edit commands for provider=%s: %s",
+                                        res.get("provider", "-"), parse_error)
+                            expanded_text = expand_unchanged_sections(response_text, doc_content)
+
+                    elif doc_content:
+                        # Expand any "unchanged sections" placeholders (legacy mode)
+                        expanded_text = expand_unchanged_sections(response_text, doc_content)
+
+                    # Validate completeness
+                    validation_issues = validate_completeness(expanded_text, doc_content)
+                    has_errors = any(issue.severity == "error" for issue in validation_issues)
+
+                    # --- LOG: post-processing + validation summary ---
+                    if debug_enabled():
+                        if validation_issues:
+                            log.info("=== VALIDATION (%s) :: provider=%s ===\n%s",
+                                    "ERRORS" if has_errors else "WARNINGS",
+                                    res.get("provider", "-"),
+                                    format_validation_report(validation_issues))
+                        log.info("=== LLM RESPONSE (post-processed) :: provider=%s ===\n%s",
+                                res.get("provider", "-"),
+                                expanded_text)
+
+                    # Persist encrypted, as before
+                    text_enc = await encrypt_text(key_id, expanded_text)
+                    ins = await s.execute(
+                        text("""
+                            INSERT INTO ai_responses (request_id, provider, text_enc, input_tokens, output_tokens, latency_ms)
+                            VALUES (:rid, :prov, :txt, :in_tok, :out_tok, :lat)
+                            RETURNING id
+                        """),
+                        {
+                            "rid": request_id,
+                            "prov": res["provider"],
+                            "txt": text_enc,
+                            "in_tok": res.get("input_tokens"),
+                            "out_tok": res.get("output_tokens"),
+                            "lat": res.get("latency_ms"),
+                        },
+                    )
+                    resp_id = str(ins.first()[0])
+
+                    provider_cards.append(
+                        ProviderCard(
+                            id=resp_id,
+                            provider=res["provider"],
+                            text=expanded_text,
+                            latencyMs=res.get("latency_ms"),
+                            ok=res.get("ok", True) and not has_errors,
+                        )
+                    )
+                await s.commit()
 
     return CompareOut(request_id=request_id, providers=provider_cards)
