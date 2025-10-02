@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from .routers import health, me, bootstrap, documents, threads, ai, selections
+from .routers import health, me, bootstrap, documents, threads, ai, selections, files
 
 load_dotenv()
 
@@ -31,6 +31,7 @@ app.include_router(documents.router)
 app.include_router(threads.router)
 app.include_router(ai.router)
 app.include_router(selections.router)
+app.include_router(files.router)
 
 
 def run():

@@ -19,6 +19,7 @@ from ..utils.validation import validate_completeness, format_validation_report
 import json
 from ..utils.debug import debug_enabled
 import logging
+from ..services.file_processor import EmbeddingService, RAGRetriever
 
 log = logging.getLogger("lumen.ai")
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -114,6 +115,131 @@ async def _current_document_block(schema: str, key_id: str, thread_id: str) -> s
     return f"<current_document>\n{content}\n</current_document>"
 
 
+async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
+    """
+    Retrieve file context for the thread.
+    For small files (direct context): include full content.
+    """
+    async with member_session(schema) as s:
+        result = await s.execute(
+            text("""
+                SELECT id, filename, content_enc
+                FROM uploaded_files
+                WHERE thread_id = :tid AND status = 'ready'
+                ORDER BY created_at ASC
+            """),
+            {"tid": thread_id}
+        )
+        
+        files = []
+        total_chars = 0
+        MAX_CONTEXT_CHARS = 20000
+        
+        for row in result:
+            file_id = str(row[0])
+            filename = row[1]
+            content_enc = row[2]
+            
+            # Check if this file uses direct context (no chunks)
+            chunk_result = await s.execute(
+                text("SELECT COUNT(*) FROM file_chunks WHERE file_id = :fid"),
+                {"fid": file_id}
+            )
+            chunk_count = chunk_result.first()[0]
+            
+            if chunk_count == 0:
+                # Direct context file
+                content = await decrypt_text(key_id, content_enc)
+                
+                if total_chars + len(content) > MAX_CONTEXT_CHARS:
+                    remaining = MAX_CONTEXT_CHARS - total_chars
+                    content = content[:remaining] + "\n\n[Content truncated...]"
+                
+                files.append(f"<file name='{filename}'>\n{content}\n</file>")
+                total_chars += len(content)
+                
+                if total_chars >= MAX_CONTEXT_CHARS:
+                    break
+    
+    if not files:
+        return ""
+    
+    return f"\n\n<uploaded_files>\n{' '.join(files)}\n</uploaded_files>\n"
+
+
+async def _get_rag_context(schema: str, key_id: str, thread_id: str, query: str, top_k: int = 5) -> str:
+    """
+    Retrieve relevant chunks from large files using RAG.
+    """
+    async with member_session(schema) as s:
+        result = await s.execute(
+            text("""
+                SELECT DISTINCT f.id, f.filename
+                FROM uploaded_files f
+                JOIN file_chunks c ON c.file_id = f.id
+                WHERE f.thread_id = :tid AND f.status = 'ready'
+            """),
+            {"tid": thread_id}
+        )
+        
+        file_ids = [(str(row[0]), row[1]) for row in result]
+    
+    if not file_ids:
+        return ""
+    
+    all_chunks = []
+    embedding_service = EmbeddingService()
+    retriever = RAGRetriever(embedding_service)
+    
+    for file_id, filename in file_ids:
+        chunk_data = []
+        async with member_session(schema) as s:
+            result = await s.execute(
+                text("""
+                    SELECT c.chunk_text_enc, e.embedding_vector
+                    FROM file_chunks c
+                    JOIN chunk_embeddings e ON e.chunk_id = c.id
+                    WHERE c.file_id = :fid
+                    ORDER BY c.chunk_index
+                """),
+                {"fid": file_id}
+            )
+            
+            for row in result:
+                chunk_text = await decrypt_text(key_id, row[0])
+                embedding = row[1]
+                chunk_data.append((chunk_text, embedding))
+        
+        if chunk_data:
+            relevant = await retriever.retrieve_relevant_chunks(
+                query, chunk_data, top_k=min(3, top_k), min_similarity=0.3
+            )
+            
+            for chunk_text, similarity in relevant:
+                all_chunks.append({
+                    "filename": filename,
+                    "text": chunk_text,
+                    "similarity": similarity
+                })
+    
+    if not all_chunks:
+        return ""
+    
+    all_chunks.sort(key=lambda x: x["similarity"], reverse=True)
+    all_chunks = all_chunks[:top_k]
+    
+    context_parts = []
+    for chunk in all_chunks:
+        context_parts.append(
+            f"<relevant_chunk file='{chunk['filename']}' similarity='{chunk['similarity']:.3f}'>\n"
+            f"{chunk['text']}\n"
+            f"</relevant_chunk>"
+        )
+    
+    return f"\n\n<relevant_file_content>\n{''.join(context_parts)}\n</relevant_file_content>\n"
+
+
+
 @router.post("/compare", response_model=CompareOut)
 async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     """
@@ -121,39 +247,39 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
       1. System preamble (task definition)
       2. Conversation history (all past user requests)
       3. Current document (if linked)
-      4. Latest user instruction
-    
+      4. Uploaded file context (direct context for small files)
+      5. RAG context (relevant chunks for large files based on query)
+      6. Latest user instruction
+
     Then fan-out to 3 AI providers and return 3 draft alternatives.
     """
     mapping = await _mapping_or_404(idn)
     schema = mapping["schema_name"]
     key_id = mapping["vault_key_id"]
 
-    # Determine if we should use structured edits based on whether doc exists and has real content
+    # Decide mode (structured edits vs full draft) based on whether a real document exists
     async with member_session(schema) as s:
         r = await s.execute(
-            text("SELECT document_id FROM chat_threads WHERE id=:tid"), 
+            text("SELECT document_id FROM chat_threads WHERE id=:tid"),
             {"tid": body.thread_id}
         )
         row = r.first()
-    
+
     has_document = False
     if row and row[0] is not None:
-        # Check if document has real content (not just placeholder)
         doc_id = str(row[0])
         async with member_session(schema) as s:
             r = await s.execute(
-                text("SELECT content_enc FROM documents WHERE id=:id"), 
+                text("SELECT content_enc FROM documents WHERE id=:id"),
                 {"id": doc_id}
             )
             d = r.first()
         if d:
             content = await decrypt_text(key_id, d[0])
-            # Check if it's a real document (more than just "New Document" placeholder)
             stripped = content.strip()
             if len(stripped) > 50 and not stripped.startswith("# New Document"):
                 has_document = True
-    
+
     use_structured_edits = STRUCTURED_EDITS_ENABLED and has_document
 
     if use_structured_edits:
@@ -165,16 +291,14 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
             "IMPORTANT: Always output the COMPLETE document. Never use placeholders like "
             "'[Sections remain unchanged]' or '[Previous content]'. Always include all sections in full."
         )
-    
+
     if body.system:
         system_preamble = body.system.strip() + "\n\n" + system_preamble
 
     messages: list[dict] = [{"role": "system", "content": system_preamble}]
 
-    # Load all past user messages (conversation memory)
+    # Conversation history (previous user turns only)
     all_user_msgs = await _load_all_user_messages(schema, key_id, body.thread_id)
-    
-    # Exclude the latest message (we'll add it separately at the end)
     if all_user_msgs:
         history_msgs = all_user_msgs[:-1]
         if history_msgs:
@@ -184,13 +308,25 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
                 history_text += f'{i}. "{preview}"\n'
             messages.append({"role": "system", "content": history_text})
 
-    # Add current document if linked
+    # Current document (if any)
     doc_block = await _current_document_block(schema, key_id, body.thread_id)
     if doc_block:
         messages.append({"role": "system", "content": doc_block})
 
-    # Add the latest user instruction
+    # === NEW: include uploaded small-file context ===
+    file_block = await _get_file_context(schema, key_id, body.thread_id)
+    if file_block:
+        messages.append({"role": "system", "content": file_block})
+
+    # Load latest instruction now so we can query RAG with it
     latest_instruction = await _load_sanitized_message(schema, key_id, body.message_id)
+
+    # === NEW: include RAG context derived from large-file chunks ===
+    rag_block = await _get_rag_context(schema, key_id, body.thread_id, latest_instruction, top_k=5)
+    if rag_block:
+        messages.append({"role": "system", "content": rag_block})
+
+    # Finally append the user's latest instruction
     messages.append({"role": "user", "content": latest_instruction})
 
     # Log what we're sending to the LLM
@@ -212,105 +348,88 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     # Fan-out to all providers
     results = await fanout_with_history(messages)
 
-    # Get current document content for post-processing
+    # Keep your existing post-processing: structured edits / expansion / validation / persistence
     doc_content = None
     if doc_block:
         match = re.search(r'<current_document>\n(.*?)\n</current_document>', doc_block, re.DOTALL)
         if match:
             doc_content = match.group(1)
 
-    # Store encrypted responses and return cards
     provider_cards: list[ProviderCard] = []
     async with member_session(schema) as s:
-                for res in results:
-                    response_text = res.get("text") or ""
+        for res in results:
+            response_text = res.get("text") or ""
 
-                    # --- LOG: raw provider output (exact, before any processing) ---
+            if debug_enabled():
+                log.info("=== LLM RESPONSE (raw) :: provider=%s ===\n%s",
+                         res.get("provider", "-"),
+                         response_text)
+
+            expanded_text = response_text
+            parsed_plan = None
+            parse_error = None
+
+            if use_structured_edits and doc_content:
+                try:
+                    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                    json_str = json_match.group(1) if json_match else response_text
+                    parsed_plan = EditPlan.model_validate_json(json_str)
+
                     if debug_enabled():
-                        log.info("=== LLM RESPONSE (raw) :: provider=%s ===\n%s",
-                                res.get("provider", "-"),
-                                response_text)
+                        log.info("=== EDIT PLAN (parsed JSON) :: provider=%s ===\n%s",
+                                 res.get("provider", "-"),
+                                 json.dumps(parsed_plan.model_dump(), indent=2, ensure_ascii=False))
 
-                    # Post-process based on mode
-                    expanded_text = response_text  # default fallback
-                    parsed_plan = None
-                    parse_error = None
+                    expanded_text = apply_edits(doc_content, parsed_plan)
+                except Exception as e:
+                    parse_error = str(e)
+                    log.warning("Failed to parse edit commands for provider=%s: %s",
+                                res.get("provider", "-"), parse_error)
+                    expanded_text = expand_unchanged_sections(response_text, doc_content)
 
-                    if use_structured_edits and doc_content:
-                        try:
-                            # Extract JSON if wrapped in markdown code blocks
-                            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-                            if json_match:
-                                json_str = json_match.group(1)
-                            else:
-                                json_str = response_text
+            elif doc_content:
+                expanded_text = expand_unchanged_sections(response_text, doc_content)
 
-                            # Parse structured edit plan
-                            parsed_plan = EditPlan.model_validate_json(json_str)
+            validation_issues = validate_completeness(expanded_text, doc_content)
+            has_errors = any(issue.severity == "error" for issue in validation_issues)
 
-                            # --- LOG: parsed JSON edit plan ---
-                            if debug_enabled():
-                                log.info("=== EDIT PLAN (parsed JSON) :: provider=%s ===\n%s",
-                                        res.get("provider", "-"),
-                                        json.dumps(parsed_plan.model_dump(), indent=2, ensure_ascii=False))
+            if debug_enabled():
+                if validation_issues:
+                    log.info("=== VALIDATION (%s) :: provider=%s ===\n%s",
+                             "ERRORS" if has_errors else "WARNINGS",
+                             res.get("provider", "-"),
+                             format_validation_report(validation_issues))
+                log.info("=== LLM RESPONSE (post-processed) :: provider=%s ===\n%s",
+                         res.get("provider", "-"),
+                         expanded_text)
 
-                            # Apply edits to current document
-                            expanded_text = apply_edits(doc_content, parsed_plan)
+            text_enc = await encrypt_text(key_id, expanded_text)
+            ins = await s.execute(
+                text("""
+                    INSERT INTO ai_responses (request_id, provider, text_enc, input_tokens, output_tokens, latency_ms)
+                    VALUES (:rid, :prov, :txt, :in_tok, :out_tok, :lat)
+                    RETURNING id
+                """),
+                {
+                    "rid": request_id,
+                    "prov": res["provider"],
+                    "txt": text_enc,
+                    "in_tok": res.get("input_tokens"),
+                    "out_tok": res.get("output_tokens"),
+                    "lat": res.get("latency_ms"),
+                },
+            )
+            resp_id = str(ins.first()[0])
 
-                        except Exception as e:
-                            parse_error = str(e)
-                            # --- LOG: parsing error (keep going with fallback) ---
-                            log.warning("Failed to parse edit commands for provider=%s: %s",
-                                        res.get("provider", "-"), parse_error)
-                            expanded_text = expand_unchanged_sections(response_text, doc_content)
-
-                    elif doc_content:
-                        # Expand any "unchanged sections" placeholders (legacy mode)
-                        expanded_text = expand_unchanged_sections(response_text, doc_content)
-
-                    # Validate completeness
-                    validation_issues = validate_completeness(expanded_text, doc_content)
-                    has_errors = any(issue.severity == "error" for issue in validation_issues)
-
-                    # --- LOG: post-processing + validation summary ---
-                    if debug_enabled():
-                        if validation_issues:
-                            log.info("=== VALIDATION (%s) :: provider=%s ===\n%s",
-                                    "ERRORS" if has_errors else "WARNINGS",
-                                    res.get("provider", "-"),
-                                    format_validation_report(validation_issues))
-                        log.info("=== LLM RESPONSE (post-processed) :: provider=%s ===\n%s",
-                                res.get("provider", "-"),
-                                expanded_text)
-
-                    # Persist encrypted, as before
-                    text_enc = await encrypt_text(key_id, expanded_text)
-                    ins = await s.execute(
-                        text("""
-                            INSERT INTO ai_responses (request_id, provider, text_enc, input_tokens, output_tokens, latency_ms)
-                            VALUES (:rid, :prov, :txt, :in_tok, :out_tok, :lat)
-                            RETURNING id
-                        """),
-                        {
-                            "rid": request_id,
-                            "prov": res["provider"],
-                            "txt": text_enc,
-                            "in_tok": res.get("input_tokens"),
-                            "out_tok": res.get("output_tokens"),
-                            "lat": res.get("latency_ms"),
-                        },
-                    )
-                    resp_id = str(ins.first()[0])
-
-                    provider_cards.append(
-                        ProviderCard(
-                            id=resp_id,
-                            provider=res["provider"],
-                            text=expanded_text,
-                            latencyMs=res.get("latency_ms"),
-                            ok=res.get("ok", True) and not has_errors,
-                        )
-                    )
-                await s.commit()
+            provider_cards.append(
+                ProviderCard(
+                    id=resp_id,
+                    provider=res["provider"],
+                    text=expanded_text,
+                    latencyMs=res.get("latency_ms"),
+                    ok=res.get("ok", True) and not has_errors,
+                )
+            )
+        await s.commit()
 
     return CompareOut(request_id=request_id, providers=provider_cards)
