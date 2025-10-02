@@ -1,270 +1,191 @@
-import { Box, Button, Chip } from '@mui/material';
-import { Brain, Clock, FileText, Plus } from 'lucide-react';
+import { Box, Button } from '@mui/material';
+import { Sparkles, Brain, Zap, ArrowRight } from 'lucide-react';
 import { useApp } from '../store';
 import { extractDraftOnly } from '../lib/extract';
+import { useState } from 'react';
 
-const providerColors = {
-  openai: { bg: '#10a37f', light: 'rgba(16, 163, 127, 0.1)', name: 'OpenAI' },
-  anthropic: { bg: '#d97757', light: 'rgba(217, 119, 87, 0.1)', name: 'Anthropic' },
-  xai: { bg: '#5865f2', light: 'rgba(88, 101, 242, 0.1)', name: 'xAI' },
+const providerConfig = {
+  openai: { name: 'GPT-4', icon: Sparkles, color: '#10A37F' },
+  anthropic: { name: 'Claude', icon: Brain, color: '#D97757' },
+  xai: { name: 'Grok', icon: Zap, color: '#5865F2' },
 };
 
 export default function Answers() {
   const answers = useApp(s => s.answers);
   const pick = useApp(s => s.pickAnswer);
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   const useAsDoc = async (a: any) => {
     const draft = extractDraftOnly(a.text);
     await pick({ ...a, text: draft }, 'replace');
   };
 
-  return (
-    <Box sx={{ 
-      display: 'flex', 
-      flexDirection: 'column',
-      height: 'calc(100vh - 120px)', 
-      maxHeight: 'calc(100vh - 120px)',
-      overflow: 'hidden'
-    }}>
-      {/* Header */}
-      <Box sx={{ p: 3, pb: 2, flexShrink: 0 }}>
+  if (answers.length === 0) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          p: 4,
+          textAlign: 'center',
+        }}
+      >
         <Box
           sx={{
+            width: 56,
+            height: 56,
+            borderRadius: '12px',
+            background: '#F9FAFB',
+            border: '1px solid #E5E7EB',
             display: 'flex',
             alignItems: 'center',
-            gap: 1,
-            mb: 1,
+            justifyContent: 'center',
+            mb: 2,
           }}
         >
-          <Brain size={20} style={{ color: '#667eea' }} />
-          <Box sx={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a' }}>
-            AI Responses
-          </Box>
-          {answers.length > 0 && (
-            <Chip
-              label={`${answers.length} models`}
-              size="small"
-              sx={{
-                ml: 'auto',
-                height: '24px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white',
-                fontWeight: 600,
-                fontSize: '11px',
-              }}
-            />
-          )}
+          <Sparkles size={28} style={{ color: '#6B7280' }} />
         </Box>
-        <Box sx={{ fontSize: '13px', color: '#666', lineHeight: 1.5 }}>
-          Compare responses from multiple AI models
+        <Box sx={{ fontSize: '15px', fontWeight: 600, color: '#111827', mb: 1 }}>
+          No responses yet
+        </Box>
+        <Box sx={{ fontSize: '14px', color: '#6B7280', lineHeight: 1.5, maxWidth: '280px' }}>
+          Ask a question to compare AI responses
         </Box>
       </Box>
+    );
+  }
 
-      {/* Scrollable content area */}
-      <Box sx={{ flex: '1 1 auto', overflowY: 'auto', px: 3, pb: 3 }}>
-        {/* Empty State */}
-        {answers.length === 0 && (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              py: 6,
-              px: 3,
-              textAlign: 'center',
-            }}
-          >
-            <Box
-              sx={{
-                width: 80,
-                height: 80,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                mb: 2,
-              }}
-            >
-              <Brain size={36} style={{ color: '#667eea' }} />
-            </Box>
-            <Box sx={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a', mb: 1 }}>
-              No responses yet
-            </Box>
-            <Box sx={{ fontSize: '13px', color: '#666', maxWidth: '280px' }}>
-              Ask a question in the chat to see AI-generated responses from multiple models
-            </Box>
-          </Box>
-        )}
+  const selectedAnswer = answers[selectedIndex] || answers[0];
+  const draft = extractDraftOnly(selectedAnswer.text);
+  const config = providerConfig[selectedAnswer.provider] || {
+    name: selectedAnswer.provider,
+    icon: Brain,
+    color: '#6B7280'
+  };
+  const Icon = config.icon;
 
-        {/* Answer Cards */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {answers.map((a) => {
-            const draft = extractDraftOnly(a.text);
-            const providerInfo = providerColors[a.provider] || { bg: '#666', light: 'rgba(0,0,0,0.05)', name: a.provider };
-
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header with model selector */}
+      <Box
+        sx={{
+          borderBottom: '1px solid #E5E7EB',
+          p: 2,
+        }}
+      >
+        <Box sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', mb: 1.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          AI Response
+        </Box>
+        
+        {/* Model Tabs */}
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {answers.map((answer, idx) => {
+            const cfg = providerConfig[answer.provider] || { name: answer.provider, icon: Brain, color: '#6B7280' };
+            const TabIcon = cfg.icon;
+            const isSelected = selectedIndex === idx;
+            
             return (
               <Box
-                key={a.id}
+                key={answer.id}
+                component="button"
+                onClick={() => setSelectedIndex(idx)}
                 sx={{
-                  border: '1px solid rgba(0, 0, 0, 0.08)',
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  transition: 'all 0.3s ease',
-                  background: 'white',
+                  flex: 1,
+                  padding: '8px 12px',
+                  border: '1px solid',
+                  borderColor: isSelected ? '#000000' : '#E5E7EB',
+                  borderRadius: '6px',
+                  background: isSelected ? '#000000' : '#FFFFFF',
+                  color: isSelected ? '#FFFFFF' : '#6B7280',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0.75,
+                  transition: 'all 0.15s ease',
                   '&:hover': {
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
-                    transform: 'translateY(-2px)',
+                    borderColor: isSelected ? '#000000' : '#9CA3AF',
+                    background: isSelected ? '#1F2937' : '#F9FAFB',
                   },
                 }}
               >
-                {/* Card Header */}
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    p: 2,
-                    background: providerInfo.light,
-                    borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Box
-                      sx={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '8px',
-                        background: providerInfo.bg,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontWeight: 700,
-                        fontSize: '14px',
-                      }}
-                    >
-                      {providerInfo.name.charAt(0)}
-                    </Box>
-                    <Box>
-                      <Box sx={{ fontSize: '14px', fontWeight: 700, color: '#1a1a1a' }}>
-                        {providerInfo.name}
-                      </Box>
-                      {a.latencyMs && (
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.5,
-                            fontSize: '11px',
-                            color: '#666',
-                          }}
-                        >
-                          <Clock size={12} />
-                          {a.latencyMs}ms
-                        </Box>
-                      )}
-                    </Box>
-                  </Box>
-                  {a.ok && (
-                    <Chip
-                      label="✓ Success"
-                      size="small"
-                      sx={{
-                        height: '22px',
-                        background: 'rgba(16, 163, 127, 0.1)',
-                        color: '#10a37f',
-                        fontWeight: 600,
-                        fontSize: '11px',
-                        border: 'none',
-                      }}
-                    />
-                  )}
-                </Box>
-
-                {/* Card Content */}
-                <Box
-                  sx={{
-                    p: 2,
-                    maxHeight: '240px',
-                    overflowY: 'auto',
-                    fontSize: '13px',
-                    lineHeight: 1.6,
-                    color: '#333',
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                    background: '#fafafa',
-                    '&::-webkit-scrollbar': {
-                      width: '6px',
-                    },
-                    '&::-webkit-scrollbar-track': {
-                      background: 'transparent',
-                    },
-                    '&::-webkit-scrollbar-thumb': {
-                      background: 'rgba(0, 0, 0, 0.2)',
-                      borderRadius: '3px',
-                    },
-                  }}
-                >
-                  {draft}
-                </Box>
-
-                {/* Card Actions */}
-                <Box
-                  sx={{
-                    display: 'flex',
-                    gap: 1,
-                    p: 2,
-                    borderTop: '1px solid rgba(0, 0, 0, 0.05)',
-                    background: 'white',
-                  }}
-                >
-                  <Button
-                    startIcon={<FileText size={16} />}
-                    onClick={() => useAsDoc(a)}
-                    sx={{
-                      flex: 1,
-                      borderRadius: '10px',
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      fontSize: '13px',
-                      py: 1,
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      color: 'white',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-                      },
-                    }}
-                  >
-                    Replace
-                  </Button>
-                  <Button
-                    startIcon={<Plus size={16} />}
-                    onClick={() => pick({ ...a, text: draft }, 'append')}
-                    variant="outlined"
-                    sx={{
-                      flex: 1,
-                      borderRadius: '10px',
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      fontSize: '13px',
-                      py: 1,
-                      borderColor: 'rgba(0, 0, 0, 0.2)',
-                      color: '#1a1a1a',
-                      '&:hover': {
-                        borderColor: '#667eea',
-                        background: 'rgba(102, 126, 234, 0.05)',
-                      },
-                    }}
-                  >
-                    Append
-                  </Button>
-                </Box>
+                <TabIcon size={14} />
+                {cfg.name}
               </Box>
             );
           })}
         </Box>
+      </Box>
+
+      {/* Content Area */}
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          p: 3,
+          fontSize: '15px',
+          lineHeight: '1.7',
+          color: '#374151',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          whiteSpace: 'pre-wrap',
+          '&::-webkit-scrollbar': {
+            width: '6px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#E5E7EB',
+            borderRadius: '3px',
+          },
+          '&::-webkit-scrollbar-thumb:hover': {
+            background: '#D1D5DB',
+          },
+        }}
+      >
+        {draft}
+      </Box>
+
+      {/* Action Button */}
+      <Box
+        sx={{
+          borderTop: '1px solid #E5E7EB',
+          p: 2,
+        }}
+      >
+        <Button
+          onClick={() => useAsDoc(selectedAnswer)}
+          fullWidth
+          endIcon={<ArrowRight size={18} />}
+          sx={{
+            borderRadius: '8px',
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '14px',
+            py: 1.5,
+            background: '#000000',
+            color: '#FFFFFF',
+            border: 'none',
+            '&:hover': {
+              background: '#1F2937',
+            },
+            transition: 'all 0.15s ease',
+          }}
+        >
+          Use this response
+        </Button>
       </Box>
     </Box>
   );

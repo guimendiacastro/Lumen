@@ -1,7 +1,7 @@
-import { Box, TextField, Button, Chip, CircularProgress } from '@mui/material';
-import { Send, Sparkles } from 'lucide-react';
+import { Box, CircularProgress } from '@mui/material';
+import { ArrowUp } from 'lucide-react';
 import { useApp } from '../store';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export default function Chat() {
   const ready = useApp(s => s.ready);
@@ -13,6 +13,7 @@ export default function Chat() {
   const askAI = useApp(s => s.askAI);
   const doc = useApp(s => s.document);
   const [isLoading, setIsLoading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -21,25 +22,54 @@ export default function Chat() {
     })();
   }, []);
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = Math.min(scrollHeight, 120) + 'px';
+    }
+  }, [input]);
+
   const handleAsk = async () => {
+    if (!input.trim() || isLoading) return;
     setIsLoading(true);
     await askAI();
     setIsLoading(false);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAsk();
+    }
+  };
+
   if (error) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box
+        sx={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'calc(100% - 96px)',
+          maxWidth: '800px',
+          zIndex: 1000,
+        }}
+      >
         <Box
           sx={{
-            background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%)',
-            color: 'white',
+            background: '#FEF2F2',
+            border: '1px solid #FCA5A5',
+            color: '#991B1B',
             p: 2,
-            borderRadius: '12px',
+            borderRadius: '8px',
             fontSize: '14px',
+            fontWeight: 500,
           }}
         >
-          ⚠️ {error}
+          {error}
         </Box>
       </Box>
     );
@@ -47,157 +77,108 @@ export default function Chat() {
 
   if (!ready || !doc) {
     return (
-      <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-        <CircularProgress size={40} sx={{ color: '#667eea' }} />
-        <Box sx={{ fontSize: '14px', color: '#666' }}>Initializing workspace...</Box>
+      <Box
+        sx={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'calc(100% - 96px)',
+          maxWidth: '800px',
+          zIndex: 1000,
+        }}
+      >
+        <Box
+          sx={{
+            background: '#FFFFFF',
+            border: '1px solid #E5E7EB',
+            borderRadius: '12px',
+            p: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+          }}
+        >
+          <CircularProgress size={20} sx={{ color: '#6B7280' }} />
+          <Box sx={{ fontSize: '14px', color: '#6B7280', fontWeight: 500 }}>
+            Initializing...
+          </Box>
+        </Box>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ 
-      display: 'flex', 
-      flexDirection: 'column',
-      height: 'calc(100vh - 120px)', 
-      maxHeight: 'calc(100vh - 120px)',
-      p: 3 
-    }}>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            mb: 1,
-          }}
-        >
-          <Sparkles size={20} style={{ color: '#667eea' }} />
-          <Box sx={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a' }}>
-            AI Assistant
-          </Box>
-        </Box>
-        <Box sx={{ fontSize: '13px', color: '#666', lineHeight: 1.5 }}>
-          Ask questions or request drafts for your document
-        </Box>
-      </Box>
-
-      {/* Current Document Info */}
-      <Box
-        sx={{
-          mb: 3,
-          p: 2,
-          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-          borderRadius: '12px',
-          border: '1px solid rgba(102, 126, 234, 0.2)',
-        }}
-      >
-        <Box sx={{ fontSize: '11px', color: '#667eea', fontWeight: 600, mb: 0.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Active Document
-        </Box>
-        <Box sx={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a' }}>
-          {doc.title}
-        </Box>
-      </Box>
-
-      {/* Input Area */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <TextField
-          fullWidth
-          multiline
-          rows={4}
-          placeholder="Ask something about your document or request a new clause..."
+    <Box
+      sx={{
+        position: 'fixed',
+        bottom: 24,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'calc(100% - 96px)',
+        maxWidth: '800px',
+        background: '#FFFFFF',
+        border: '1px solid #E5E7EB',
+        borderRadius: '12px',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+        zIndex: 1000,
+      }}
+    >
+      <Box sx={{ display: 'flex', gap: 1.5, p: 1.5, alignItems: 'flex-end' }}>
+        <textarea
+          ref={textareaRef}
           value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              handleAsk();
-            }
-          }}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask LUMEN..."
           disabled={isLoading}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              borderRadius: '16px',
-              backgroundColor: 'white',
-              fontSize: '14px',
-              '& fieldset': {
-                borderColor: 'rgba(0, 0, 0, 0.1)',
-              },
-              '&:hover fieldset': {
-                borderColor: '#667eea',
-              },
-              '&.Mui-focused fieldset': {
-                borderColor: '#667eea',
-                borderWidth: '2px',
-              },
-            },
+          style={{
+            flex: 1,
+            minHeight: '44px',
+            maxHeight: '120px',
+            padding: '12px 14px',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '15px',
+            fontWeight: 400,
+            color: '#111827',
+            outline: 'none',
+            resize: 'none',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            background: 'transparent',
+            lineHeight: '1.5',
           }}
         />
 
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box sx={{ fontSize: '12px', color: '#999' }}>
-            Press ⌘+Enter to send
-          </Box>
-          <Button
-            variant="contained"
-            endIcon={isLoading ? <CircularProgress size={16} sx={{ color: 'white' }} /> : <Send size={16} />}
-            onClick={handleAsk}
-            disabled={!input.trim() || isLoading}
-            sx={{
-              borderRadius: '12px',
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              py: 1,
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-                boxShadow: '0 6px 16px rgba(102, 126, 234, 0.5)',
-              },
-              '&:disabled': {
-                background: '#e0e0e0',
-                color: '#999',
-              },
-            }}
-          >
-            {isLoading ? 'Processing...' : 'Ask AI'}
-          </Button>
-        </Box>
-      </Box>
-
-      {/* Suggestions */}
-      <Box sx={{ mt: 3 }}>
-        <Box sx={{ fontSize: '12px', color: '#666', mb: 1.5, fontWeight: 600 }}>
-          Quick suggestions:
-        </Box>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {[
-            'Summarize this document',
-            'Add a conclusion',
-            'Improve clarity',
-            'Draft introduction',
-          ].map(suggestion => (
-            <Chip
-              key={suggestion}
-              label={suggestion}
-              onClick={() => setInput(suggestion)}
-              size="small"
-              sx={{
-                borderRadius: '8px',
-                border: '1px solid rgba(102, 126, 234, 0.3)',
-                background: 'white',
-                fontSize: '12px',
-                fontWeight: 500,
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-                  borderColor: '#667eea',
-                  transform: 'translateY(-1px)',
-                },
-              }}
-            />
-          ))}
+        <Box
+          component="button"
+          onClick={handleAsk}
+          disabled={!input.trim() || isLoading}
+          sx={{
+            width: '44px',
+            height: '44px',
+            minWidth: '44px',
+            minHeight: '44px',
+            borderRadius: '8px',
+            border: 'none',
+            background: input.trim() && !isLoading ? '#000000' : '#F3F4F6',
+            color: input.trim() && !isLoading ? '#FFFFFF' : '#9CA3AF',
+            cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.15s ease',
+            '&:hover': {
+              background: input.trim() && !isLoading ? '#1F2937' : '#F3F4F6',
+            },
+          }}
+        >
+          {isLoading ? (
+            <CircularProgress size={18} sx={{ color: '#FFFFFF' }} />
+          ) : (
+            <ArrowUp size={20} strokeWidth={2.5} />
+          )}
         </Box>
       </Box>
     </Box>

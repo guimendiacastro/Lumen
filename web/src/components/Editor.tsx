@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as monaco from 'monaco-editor';
-import { Box, Button, Chip } from '@mui/material';
-import { Save, FileText, CheckCircle } from 'lucide-react';
+import { Box, Button } from '@mui/material';
+import { Check } from 'lucide-react';
 import { useApp } from '../store';
 
 export default function Editor() {
@@ -12,28 +12,41 @@ export default function Editor() {
   const setEditBuffer = useApp(s => s.setEditBuffer);
   const [isSaving, setIsSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
-  const [editorHeight, setEditorHeight] = React.useState(600);
 
   React.useEffect(() => {
     if (!containerRef.current) return;
-    
+
     editorRef.current = monaco.editor.create(containerRef.current, {
       value: doc?.content ?? '',
       language: 'markdown',
       automaticLayout: true,
       minimap: { enabled: false },
-      fontSize: 14,
-      lineHeight: 24,
-      padding: { top: 16, bottom: 16 },
-      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      fontSize: 15,
+      lineHeight: 26,
+      padding: { top: 20, bottom: 20 },
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       smoothScrolling: true,
       cursorBlinking: 'smooth',
       cursorSmoothCaretAnimation: 'on',
-      renderLineHighlight: 'all',
+      renderLineHighlight: 'none',
       scrollBeyondLastLine: false,
       wordWrap: 'on',
       wrappingIndent: 'same',
       theme: 'vs',
+      lineNumbers: 'off',
+      glyphMargin: false,
+      folding: false,
+      lineDecorationsWidth: 0,
+      lineNumbersMinChars: 0,
+      renderWhitespace: 'none',
+      overviewRulerBorder: false,
+      hideCursorInOverviewRuler: true,
+      scrollbar: {
+        vertical: 'visible',
+        horizontal: 'visible',
+        verticalScrollbarSize: 6,
+        horizontalScrollbarSize: 6,
+      },
     });
 
     const sub = editorRef.current.onDidChangeModelContent(() => {
@@ -49,131 +62,101 @@ export default function Editor() {
   }, []);
 
   React.useEffect(() => {
-    if (editorRef.current && doc) {
-      const curr = editorRef.current.getValue();
-      if (curr !== doc.content) {
+    if (doc && editorRef.current) {
+      const currentValue = editorRef.current.getValue();
+      if (currentValue !== doc.content) {
         editorRef.current.setValue(doc.content);
-        setSaved(true);
       }
     }
-  }, [doc]);
+  }, [doc?.content]);
 
-  const onSave = async () => {
-    if (!editorRef.current) return;
+  const handleSave = async () => {
+    const content = editorRef.current?.getValue();
+    if (!content) return;
     setIsSaving(true);
-    const text = editorRef.current.getValue();
-    await saveDoc(text);
-    setIsSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await saveDoc(content);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden',
+      }}
+    >
       {/* Header */}
       <Box
         sx={{
+          borderBottom: '1px solid #E5E7EB',
+          p: 2,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          p: 3,
-          pb: 2,
-          borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
-          flexShrink: 0,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <FileText size={20} style={{ color: '#667eea' }} />
-          <Box sx={{ fontSize: '18px', fontWeight: 700, color: '#1a1a1a' }}>
-            Document Editor
+        <Box>
+          <Box sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Document
           </Box>
-          {saved && (
-            <Chip
-              icon={<CheckCircle size={14} />}
-              label="Saved"
-              size="small"
-              sx={{
-                ml: 1,
-                height: '24px',
-                background: 'rgba(16, 163, 127, 0.1)',
-                color: '#10a37f',
-                fontWeight: 600,
-                fontSize: '11px',
-                border: 'none',
-                '& .MuiChip-icon': {
-                  color: '#10a37f',
-                },
-              }}
-            />
-          )}
+          <Box sx={{ fontSize: '15px', fontWeight: 600, color: '#111827', mt: 0.5 }}>
+            {doc?.title || 'Untitled'}
+          </Box>
         </Box>
+
         <Button
-          variant="contained"
-          startIcon={isSaving ? null : <Save size={16} />}
-          onClick={onSave}
-          disabled={isSaving}
+          startIcon={saved ? <Check size={16} /> : null}
+          onClick={handleSave}
+          disabled={isSaving || saved}
           sx={{
-            borderRadius: '10px',
+            borderRadius: '6px',
             textTransform: 'none',
             fontWeight: 600,
             fontSize: '13px',
-            px: 2.5,
+            px: 2,
             py: 1,
-            background: saved
-              ? 'linear-gradient(135deg, #10a37f 0%, #0d8f6f 100%)'
-              : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
-            transition: 'all 0.3s ease',
+            background: saved ? '#ECFDF5' : '#000000',
+            color: saved ? '#059669' : '#FFFFFF',
+            border: saved ? '1px solid #D1FAE5' : 'none',
             '&:hover': {
-              background: saved
-                ? 'linear-gradient(135deg, #0d8f6f 0%, #0a7a5e 100%)'
-                : 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-              boxShadow: '0 6px 16px rgba(102, 126, 234, 0.4)',
+              background: saved ? '#ECFDF5' : '#1F2937',
             },
             '&:disabled': {
-              background: '#e0e0e0',
-              color: '#999',
+              background: saved ? '#ECFDF5' : '#F3F4F6',
+              color: saved ? '#059669' : '#9CA3AF',
             },
+            transition: 'all 0.15s ease',
           }}
         >
-          {isSaving ? 'Saving...' : saved ? 'Saved' : 'Save Document'}
+          {isSaving ? 'Saving...' : saved ? 'Saved' : 'Save'}
         </Button>
       </Box>
 
-      {/* Document Info */}
+      {/* Monaco Editor Container */}
       <Box
+        ref={containerRef}
         sx={{
-          px: 3,
-          pt: 2,
-          pb: 1.5,
-          flexShrink: 0,
-        }}
-      >
-        <Box sx={{ fontSize: '11px', color: '#667eea', fontWeight: 600, mb: 0.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Currently Editing
-        </Box>
-        <Box sx={{ fontSize: '14px', fontWeight: 600, color: '#1a1a1a' }}>
-          {doc?.title || 'Untitled Document'}
-        </Box>
-      </Box>
-
-      {/* Monaco Editor */}
-      <Box
-        sx={{
-          flex: '1 1 auto',
-          mx: 3,
-          mb: 3,
-          minHeight: '400px',
-          height: '100%',
-          borderRadius: '16px',
+          flex: 1,
           overflow: 'hidden',
-          border: '1px solid rgba(0, 0, 0, 0.08)',
-          boxShadow: 'inset 0 2px 8px rgba(0, 0, 0, 0.04)',
-          background: '#fafafa',
+          background: '#FFFFFF',
+          '& .monaco-editor': {
+            '& .monaco-scrollable-element > .scrollbar > .slider': {
+              background: '#E5E7EB !important',
+              borderRadius: '3px',
+            },
+            '& .monaco-scrollable-element > .scrollbar > .slider:hover': {
+              background: '#D1D5DB !important',
+            },
+          },
         }}
-      >
-        <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
-      </Box>
+      />
     </Box>
   );
 }
