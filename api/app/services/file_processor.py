@@ -2,6 +2,7 @@
 """
 File processing service with chunking and embedding strategies.
 Supports both direct context (small files) and RAG (large files).
+Now includes PDF and DOCX extraction.
 """
 
 import os
@@ -11,6 +12,10 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 import httpx
 from dotenv import load_dotenv
+
+# PDF and DOCX processing
+import PyPDF2
+from docx import Document as DocxDocument
 
 load_dotenv()
 
@@ -42,22 +47,71 @@ class FileProcessor:
     """Processes files for either direct context or RAG."""
     
     @staticmethod
+    def extract_text_from_pdf(content: bytes) -> str:
+        """Extract text from PDF using PyPDF2."""
+        try:
+            import io
+            pdf_file = io.BytesIO(content)
+            reader = PyPDF2.PdfReader(pdf_file)
+            
+            text_parts = []
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    text_parts.append(text)
+            
+            return '\n\n'.join(text_parts)
+        except Exception as e:
+            raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+    
+    @staticmethod
+    def extract_text_from_docx(content: bytes) -> str:
+        """Extract text from DOCX using python-docx."""
+        try:
+            import io
+            docx_file = io.BytesIO(content)
+            doc = DocxDocument(docx_file)
+            
+            text_parts = []
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    text_parts.append(paragraph.text)
+            
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = ' | '.join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        text_parts.append(row_text)
+            
+            return '\n\n'.join(text_parts)
+        except Exception as e:
+            raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
+    
+    @staticmethod
     def extract_text_from_file(content: bytes, mime_type: str) -> str:
         """
         Extract text from various file types.
-        For Stage 1, supports text files. Extend for PDF, DOCX, etc.
+        Supports: TXT, MD, PDF, DOCX, DOC
         """
         if mime_type.startswith('text/'):
             return content.decode('utf-8', errors='ignore')
+        
         elif mime_type == 'application/pdf':
-            # TODO: Add PyPDF2 or pdfplumber
-            raise NotImplementedError("PDF extraction coming soon")
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            # TODO: Add python-docx
-            raise NotImplementedError("DOCX extraction coming soon")
+            return FileProcessor.extract_text_from_pdf(content)
+        
+        elif mime_type in [
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+            'application/msword'  # .doc (older format)
+        ]:
+            return FileProcessor.extract_text_from_docx(content)
+        
         else:
             # Try UTF-8 decode as fallback
-            return content.decode('utf-8', errors='ignore')
+            try:
+                return content.decode('utf-8', errors='ignore')
+            except Exception:
+                raise ValueError(f"Unsupported file type: {mime_type}")
     
     @staticmethod
     def estimate_tokens(text: str) -> int:
