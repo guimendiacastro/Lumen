@@ -3,30 +3,37 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
-from typing import List
 
 from ..security import get_identity, Identity
 from ..db import fetch_member_mapping, member_session
 from ..crypto.vault import encrypt_text, decrypt_text
 from ..llm.clients import fanout_with_history
-from ..utils.debug import dump_messages
+from ..utils.debug import dump_messages, debug_enabled
 from ..utils.document_processor import expand_unchanged_sections
 from ..utils.edit_commands import generate_edit_system_prompt, apply_edits, EditPlan
 from ..utils.validation import validate_completeness, format_validation_report
-import json
-from ..utils.debug import debug_enabled
-import logging
+
+# NEW: query expansion for summary/overview prompts
+from ..utils.chunking import expand_query_for_summary
+
+# Reuse existing embedding + retriever services (no new deps/tables)
 from ..services.file_processor import EmbeddingService, RAGRetriever
 
 log = logging.getLogger("lumen.ai")
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 STRUCTURED_EDITS_ENABLED = os.getenv("STRUCTURED_EDITS", "true").lower() == "true"
-
 MAX_DOC_CHARS = int(os.getenv("MAX_DOC_CHARS", "24000"))
+
+# Tunables for improved recall
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "15"))
+RAG_MIN_SIM = float(os.getenv("RAG_MIN_SIMILARITY", "0.50"))
 
 class CompareIn(BaseModel):
     thread_id: str
@@ -62,7 +69,7 @@ async def _load_all_user_messages(schema: str, key_id: str, thread_id: str) -> l
              ORDER BY created_at ASC, id ASC
         """), {"tid": thread_id})
         rows = r.all()
-    
+
     out = []
     for (enc,) in rows:
         content = await decrypt_text(key_id, enc)
@@ -167,10 +174,24 @@ async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
     return f"\n\n<uploaded_files>\n{' '.join(files)}\n</uploaded_files>\n"
 
 
-async def _get_rag_context(schema: str, key_id: str, thread_id: str, query: str, top_k: int = 5) -> str:
+async def _get_rag_context(
+    schema: str,
+    key_id: str,
+    thread_id: str,
+    query: str,
+    top_k: int = RAG_TOP_K,
+    min_similarity: float = RAG_MIN_SIM
+) -> str:
     """
     Retrieve relevant chunks from large files using RAG.
+
+    Improvements:
+      - Query expansion for summary-like prompts
+      - Higher top_k for broader coverage
+      - Lower similarity threshold for better recall
+    Uses existing file_chunks + chunk_embeddings tables via RAGRetriever.
     """
+    # Candidate files that have chunked content
     async with member_session(schema) as s:
         result = await s.execute(
             text("""
@@ -186,11 +207,15 @@ async def _get_rag_context(schema: str, key_id: str, thread_id: str, query: str,
     
     if not file_ids:
         return ""
-    
+
+    # Expand the query if it's a summary/overview ask
+    expanded_query = expand_query_for_summary(query)
+
     all_chunks = []
     embedding_service = EmbeddingService()
     retriever = RAGRetriever(embedding_service)
-    
+
+    # Collect (plaintext_chunk, embedding) per file and retrieve
     for file_id, filename in file_ids:
         chunk_data = []
         async with member_session(schema) as s:
@@ -210,34 +235,41 @@ async def _get_rag_context(schema: str, key_id: str, thread_id: str, query: str,
                 embedding = row[1]
                 chunk_data.append((chunk_text, embedding))
         
-        if chunk_data:
-            relevant = await retriever.retrieve_relevant_chunks(
-                query, chunk_data, top_k=min(3, top_k), min_similarity=0.3
-            )
-            
-            for chunk_text, similarity in relevant:
-                all_chunks.append({
-                    "filename": filename,
-                    "text": chunk_text,
-                    "similarity": similarity
-                })
+        if not chunk_data:
+            continue
+
+        # Per-file cap so we keep diversity across files
+        relevant = await retriever.retrieve_relevant_chunks(
+            expanded_query,
+            chunk_data,
+            top_k=min(8, top_k),
+            min_similarity=min_similarity
+        )
+        
+        for chunk_text, similarity in relevant:
+            all_chunks.append({
+                "filename": filename,
+                "text": chunk_text,
+                "similarity": similarity
+            })
     
     if not all_chunks:
         return ""
-    
+
+    # Keep the best overall
     all_chunks.sort(key=lambda x: x["similarity"], reverse=True)
     all_chunks = all_chunks[:top_k]
-    
-    context_parts = []
-    for chunk in all_chunks:
-        context_parts.append(
-            f"<relevant_chunk file='{chunk['filename']}' similarity='{chunk['similarity']:.3f}'>\n"
-            f"{chunk['text']}\n"
+
+    # Format as a single block
+    parts = []
+    for ch in all_chunks:
+        parts.append(
+            f"<relevant_chunk file='{ch['filename']}' similarity='{ch['similarity']:.3f}'>\n"
+            f"{ch['text']}\n"
             f"</relevant_chunk>"
         )
-    
-    return f"\n\n<relevant_file_content>\n{''.join(context_parts)}\n</relevant_file_content>\n"
 
+    return f"\n\n<relevant_file_content>\n{''.join(parts)}\n</relevant_file_content>\n"
 
 
 @router.post("/compare", response_model=CompareOut)
@@ -248,7 +280,7 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
       2. Conversation history (all past user requests)
       3. Current document (if linked)
       4. Uploaded file context (direct context for small files)
-      5. RAG context (relevant chunks for large files based on query)
+      5. RAG context (relevant chunks for large files; IMPROVED)
       6. Latest user instruction
 
     Then fan-out to 3 AI providers and return 3 draft alternatives.
@@ -257,7 +289,7 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     schema = mapping["schema_name"]
     key_id = mapping["vault_key_id"]
 
-    # Decide mode (structured edits vs full draft) based on whether a real document exists
+    # Decide structured-edits mode based on whether a real document exists
     async with member_session(schema) as s:
         r = await s.execute(
             text("SELECT document_id FROM chat_threads WHERE id=:tid"),
@@ -313,7 +345,7 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     if doc_block:
         messages.append({"role": "system", "content": doc_block})
 
-    # === NEW: include uploaded small-file context ===
+    # Include uploaded small-file context
     file_block = await _get_file_context(schema, key_id, body.thread_id)
     if file_block:
         messages.append({"role": "system", "content": file_block})
@@ -321,8 +353,15 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     # Load latest instruction now so we can query RAG with it
     latest_instruction = await _load_sanitized_message(schema, key_id, body.message_id)
 
-    # === NEW: include RAG context derived from large-file chunks ===
-    rag_block = await _get_rag_context(schema, key_id, body.thread_id, latest_instruction, top_k=5)
+    # IMPROVED RAG: expanded query, more chunks, lower threshold
+    rag_block = await _get_rag_context(
+        schema=schema,
+        key_id=key_id,
+        thread_id=body.thread_id,
+        query=latest_instruction,
+        top_k=RAG_TOP_K,
+        min_similarity=RAG_MIN_SIM
+    )
     if rag_block:
         messages.append({"role": "system", "content": rag_block})
 
@@ -345,10 +384,10 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
         request_id = str(rq.first()[0])
         await s.commit()
 
-    # Fan-out to all providers
+    # Fan-out to all providers (keeps your existing client abstraction)
     results = await fanout_with_history(messages)
 
-    # Keep your existing post-processing: structured edits / expansion / validation / persistence
+    # If we had a current doc, try to expand placeholders / apply structured edits
     doc_content = None
     if doc_block:
         match = re.search(r'<current_document>\n(.*?)\n</current_document>', doc_block, re.DOTALL)
@@ -366,8 +405,6 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
                          response_text)
 
             expanded_text = response_text
-            parsed_plan = None
-            parse_error = None
 
             if use_structured_edits and doc_content:
                 try:
@@ -382,14 +419,16 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
 
                     expanded_text = apply_edits(doc_content, parsed_plan)
                 except Exception as e:
-                    parse_error = str(e)
+                    # Fall back to placeholder expansion
                     log.warning("Failed to parse edit commands for provider=%s: %s",
-                                res.get("provider", "-"), parse_error)
+                                res.get("provider", "-"), str(e))
                     expanded_text = expand_unchanged_sections(response_text, doc_content)
 
             elif doc_content:
+                # No structured edits mode → still expand placeholders
                 expanded_text = expand_unchanged_sections(response_text, doc_content)
 
+            # Validate completeness vs the source doc (if any)
             validation_issues = validate_completeness(expanded_text, doc_content)
             has_errors = any(issue.severity == "error" for issue in validation_issues)
 
@@ -403,6 +442,7 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
                          res.get("provider", "-"),
                          expanded_text)
 
+            # Store encrypted response
             text_enc = await encrypt_text(key_id, expanded_text)
             ins = await s.execute(
                 text("""

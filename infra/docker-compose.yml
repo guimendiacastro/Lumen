@@ -3,11 +3,12 @@ name: lumen-infra
 
 services:
   postgres:
-    image: postgres:15-alpine
+    # Use ankane/pgvector image which includes pgvector pre-installed
+    image: ankane/pgvector:v0.5.1
     container_name: lumen-postgres
     restart: unless-stopped
     ports:
-      - "5433:5432"        # host:container  (host uses 5433 now)
+      - "5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -22,6 +23,12 @@ services:
       retries: 20
     networks:
       - lumen-net
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=vector"
+      - "-c"
+      - "max_connections=200"
 
   vault:
     image: hashicorp/vault:1.15
