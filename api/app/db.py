@@ -53,14 +53,12 @@ _SCHEMA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 async def member_session(schema_name: str) -> AsyncIterator[AsyncSession]:
     """
     Open a session with per-request search_path set to the member's schema.
-
-    Note: You cannot bind an identifier (schema name) as a SQL parameter in SET search_path.
-    We validate and inline it safely instead.
+    IMPORTANT: Always include 'public' for extensions like pgvector.
     """
     if not _SCHEMA_RE.match(schema_name):
         raise ValueError(f"Invalid schema name: {schema_name!r}")
 
     async with SessionLocal() as session:
-        # inline the validated identifier (no quotes needed for simple identifiers)
-        await session.execute(text(f"SET LOCAL search_path TO {schema_name}"))
+        # Include public in search path for extensions (vector, uuid-ossp, etc.)
+        await session.execute(text(f"SET LOCAL search_path TO {schema_name}, public"))
         yield session

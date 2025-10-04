@@ -82,8 +82,14 @@ async def _store_file_record(
 ) -> str:
     """Store file metadata and return file_id"""
     
-    # Encrypt full content
-    content_enc = await encrypt_text(key_id, content.decode('utf-8', errors='ignore'))
+    # For direct context files, store extracted text. Otherwise store raw bytes.
+    if result.use_direct_context and result.full_text:
+        content_to_store = result.full_text
+    else:
+        content_to_store = content.decode('utf-8', errors='ignore')
+    
+    # Encrypt the appropriate content
+    content_enc = await encrypt_text(key_id, content_to_store)
     
     file_id = str(uuid.uuid4())
     

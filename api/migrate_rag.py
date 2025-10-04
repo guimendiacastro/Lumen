@@ -64,6 +64,8 @@ async def create_embeddings(chunks: list[Chunk], model_name: str = EMBEDDING_MOD
 
 async def store_chunks_in_db(chunks: list[Chunk], embeddings, schema: str, key_id: str):
     """Store chunks with embeddings in database."""
+    import json
+    
     print(f"💾 Storing {len(chunks)} chunks in database (schema: {schema})...")
     
     # Create RAG table if it doesn't exist (split into separate commands)
@@ -106,19 +108,28 @@ async def store_chunks_in_db(chunks: list[Chunk], embeddings, schema: str, key_i
             # Encrypt content
             content_enc = await encrypt_text(key_id, chunk.content)
             
+            # Convert bytes to string if needed
+            if isinstance(content_enc, bytes):
+                content_enc_str = content_enc.decode('utf-8')
+            else:
+                content_enc_str = content_enc
+            
             # Convert numpy array to list for Postgres
             embedding_list = embedding.tolist()
+            
+            # Convert metadata dict to JSON string (not Python str representation)
+            metadata_json = json.dumps(chunk.metadata)
             
             # Insert chunk
             await session.execute(text("""
                 INSERT INTO document_chunks 
                 (chunk_index, content_enc, embedding, metadata, start_char, end_char)
-                VALUES (:idx, :content, :embedding::vector, :metadata::jsonb, :start_char, :end_char)
+                VALUES (:idx, :content, CAST(:embedding AS vector), CAST(:metadata AS jsonb), :start_char, :end_char)
             """), {
                 "idx": i,
-                "content": content_enc,
+                "content": content_enc_str,
                 "embedding": str(embedding_list),
-                "metadata": str(chunk.metadata),
+                "metadata": metadata_json,
                 "start_char": chunk.start_char,
                 "end_char": chunk.end_char
             })
@@ -148,10 +159,10 @@ async def test_search(schema: str, key_id: str, query: str, top_k: int = 12):
                 chunk_index,
                 content_enc,
                 metadata,
-                1 - (embedding <=> :query_embedding::vector) as similarity
+                1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
             FROM document_chunks
-            WHERE 1 - (embedding <=> :query_embedding::vector) >= :threshold
-            ORDER BY embedding <=> :query_embedding::vector
+            WHERE 1 - (embedding <=> CAST(:query_embedding AS vector)) >= :threshold
+            ORDER BY embedding <=> CAST(:query_embedding AS vector)
             LIMIT :limit
         """), {
             "query_embedding": str(query_embedding),
@@ -166,7 +177,14 @@ async def test_search(schema: str, key_id: str, query: str, top_k: int = 12):
     # Decrypt results
     for row in rows:
         idx, content_enc, metadata, similarity = row
-        content = await decrypt_text(key_id, content_enc)
+        
+        # Handle both str (from TEXT column) and bytes (from BYTEA column)
+        if isinstance(content_enc, str):
+            content_enc_bytes = content_enc.encode('utf-8')
+        else:
+            content_enc_bytes = content_enc
+            
+        content = await decrypt_text(key_id, content_enc_bytes)
         
         print(f"--- Chunk {idx} (similarity: {similarity:.3f}) ---")
         print(f"Metadata: {metadata}")
