@@ -1,12 +1,12 @@
-// web/src/components/Chat.tsx
+// web/src/components/QuestionBar.tsx
+import { useState, useRef, useEffect } from 'react';
 import { Box, CircularProgress, IconButton } from '@mui/material';
 import { ArrowUp, Paperclip, X } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
-import { useEffect, useState, useRef } from 'react';
 import FileUpload from './FileUpload';
 
-export default function Chat() {
+export default function QuestionBar() {
   const { getToken } = useAuth();
   const ready = useApp((s) => s.ready);
   const error = useApp((s) => s.error);
@@ -57,20 +57,14 @@ export default function Chat() {
     return (
       <Box
         sx={{
-          position: 'fixed',
-          bottom: 24,
-          left: '50%',
-          transform: 'translateX(-50%)',
+          p: 2,
           background: '#FEE2E2',
-          color: '#991B1B',
-          px: 3,
-          py: 2,
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-          zIndex: 1000,
+          borderTop: '1px solid #FCA5A5',
         }}
       >
-        Error: {error}
+        <Box sx={{ fontSize: '13px', color: '#DC2626', fontWeight: 500, textAlign: 'center' }}>
+          Error: {error}
+        </Box>
       </Box>
     );
   }
@@ -79,13 +73,15 @@ export default function Chat() {
     return (
       <Box
         sx={{
-          flex: 1,
+          p: 3,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          borderTop: '1px solid #E5E7EB',
+          background: 'white',
         }}
       >
-        <CircularProgress size={32} />
+        <CircularProgress size={24} />
       </Box>
     );
   }
@@ -93,90 +89,84 @@ export default function Chat() {
   return (
     <Box
       sx={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
+        borderTop: '1px solid #E5E7EB',
+        background: 'white',
+        boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.04)',
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          p: 2,
-          borderBottom: '1px solid #E5E7EB',
-        }}
-      >
-        <Box
-          sx={{
-            fontSize: '12px',
-            fontWeight: 600,
-            color: '#6B7280',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}
-        >
-          Chat
-        </Box>
-        <Box sx={{ fontSize: '15px', fontWeight: 600, color: '#111827', mt: 0.5 }}>
-          {doc?.title || 'Untitled'}
-        </Box>
-      </Box>
-
-      {/* Messages Area */}
-      <Box
-        sx={{
-          flex: 1,
-          overflowY: 'auto',
-          p: 2,
-        }}
-      >
-        {/* Messages would go here */}
-      </Box>
-
       {/* File Upload Section */}
       {showUpload && threadId && (
-        <Box sx={{ px: 2, pb: 1 }}>
+        <Box
+          sx={{
+            p: 3,
+            borderBottom: '1px solid #E5E7EB',
+            background: '#FAFAFA',
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+              Upload Files
+            </Box>
+            <IconButton
+              size="small"
+              onClick={() => setShowUpload(false)}
+              sx={{
+                width: 28,
+                height: 28,
+                '&:hover': { background: '#F3F4F6' },
+              }}
+            >
+              <X size={16} color="#6B7280" />
+            </IconButton>
+          </Box>
+
           <FileUpload
             threadId={threadId}
             documentId={doc?.id}
-            onClose={() => setShowUpload(false)}
+            onUploadComplete={(files) => {
+              console.log('Files uploaded:', files);
+            }}
           />
         </Box>
       )}
 
       {/* Input Area */}
-      <Box
-        sx={{
-          p: 2,
-          borderTop: '1px solid #E5E7EB',
-        }}
-      >
+      <Box sx={{ p: 3 }}>
         <Box
           sx={{
             display: 'flex',
             alignItems: 'flex-end',
-            gap: 1,
-            background: 'white',
+            gap: 1.5,
+            background: '#F9FAFB',
             border: '2px solid #E5E7EB',
-            borderRadius: '12px',
-            padding: '8px 12px',
+            borderRadius: '16px',
+            padding: '12px 16px',
+            transition: 'all 0.2s ease',
             '&:focus-within': {
               borderColor: '#667eea',
+              background: 'white',
             },
-            transition: 'border-color 0.2s',
           }}
         >
           <IconButton
             size="small"
             onClick={() => setShowUpload(!showUpload)}
+            disabled={isLoading}
             sx={{
-              width: 32,
-              height: 32,
-              color: '#6B7280',
-              '&:hover': { background: '#F3F4F6' },
+              width: 40,
+              height: 40,
+              borderRadius: '10px',
+              background: showUpload ? '#E0E7FF' : 'transparent',
+              color: showUpload ? '#667eea' : '#6B7280',
+              '&:hover': {
+                background: showUpload ? '#E0E7FF' : '#F3F4F6',
+              },
+              '&:disabled': {
+                opacity: 0.5,
+              },
             }}
           >
-            <Paperclip size={18} />
+            <Paperclip size={20} />
           </IconButton>
 
           <textarea
@@ -184,20 +174,21 @@ export default function Chat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask AI for help..."
+            placeholder="Ask AI to help with your document..."
             disabled={isLoading}
             style={{
               flex: 1,
               border: 'none',
               outline: 'none',
               resize: 'none',
-              fontSize: '14px',
-              fontFamily: 'inherit',
-              lineHeight: '20px',
-              padding: '6px 0',
-              minHeight: '20px',
+              fontSize: '15px',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              lineHeight: '24px',
+              padding: '8px 0',
+              minHeight: '24px',
               maxHeight: '120px',
               background: 'transparent',
+              color: '#111827',
             }}
           />
 
@@ -206,21 +197,41 @@ export default function Chat() {
             onClick={handleAsk}
             disabled={!input.trim() || isLoading}
             sx={{
-              width: 32,
-              height: 32,
-              background: input.trim() && !isLoading ? '#000000' : '#F3F4F6',
+              width: 40,
+              height: 40,
+              borderRadius: '10px',
+              background: input.trim() && !isLoading ? '#667eea' : '#F3F4F6',
               color: input.trim() && !isLoading ? '#FFFFFF' : '#9CA3AF',
               '&:hover': {
-                background: input.trim() && !isLoading ? '#1F2937' : '#F3F4F6',
+                background: input.trim() && !isLoading ? '#5568d3' : '#F3F4F6',
               },
               '&:disabled': {
                 background: '#F3F4F6',
                 color: '#9CA3AF',
               },
+              transition: 'all 0.2s ease',
             }}
           >
-            {isLoading ? <CircularProgress size={16} sx={{ color: '#9CA3AF' }} /> : <ArrowUp size={18} />}
+            {isLoading ? <CircularProgress size={20} sx={{ color: '#9CA3AF' }} /> : <ArrowUp size={20} />}
           </IconButton>
+        </Box>
+
+        {/* Hint Text */}
+        <Box
+          sx={{
+            mt: 1.5,
+            px: 1,
+            fontSize: '12px',
+            color: '#9CA3AF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+          }}
+        >
+          <Box>Press Enter to send, Shift+Enter for new line</Box>
+          <Box sx={{ color: '#D1D5DB' }}>•</Box>
+          <Box>Powered by GPT-4, Claude & Grok</Box>
         </Box>
       </Box>
     </Box>

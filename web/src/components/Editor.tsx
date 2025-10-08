@@ -1,15 +1,18 @@
+// web/src/components/Editor.tsx
 import * as React from 'react';
 import * as monaco from 'monaco-editor';
 import { Box, Button } from '@mui/material';
 import { Check } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
 
 export default function Editor() {
+  const { getToken } = useAuth();
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const editorRef = React.useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const doc = useApp(s => s.document);
-  const saveDoc = useApp(s => s.saveDoc);
-  const setEditBuffer = useApp(s => s.setEditBuffer);
+  const doc = useApp((s) => s.document);
+  const saveDoc = useApp((s) => s.saveDoc);
+  const setEditBuffer = useApp((s) => s.setEditBuffer);
   const [isSaving, setIsSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
 
@@ -59,7 +62,7 @@ export default function Editor() {
       sub.dispose();
       editorRef.current?.dispose();
     };
-  }, []);
+  }, [setEditBuffer]);
 
   React.useEffect(() => {
     if (doc && editorRef.current) {
@@ -75,7 +78,8 @@ export default function Editor() {
     if (!content) return;
     setIsSaving(true);
     try {
-      await saveDoc(content);
+      const token = await getToken();
+      await saveDoc(content, token);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -103,7 +107,15 @@ export default function Editor() {
         }}
       >
         <Box>
-          <Box sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <Box
+            sx={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#6B7280',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
             Document
           </Box>
           <Box sx={{ fontSize: '15px', fontWeight: 600, color: '#111827', mt: 0.5 }}>

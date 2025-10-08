@@ -1,105 +1,166 @@
-import { Box } from '@mui/material';
-import Chat from './components/Chat';
+// web/src/App.tsx
+import { Box, CircularProgress, Typography } from '@mui/material';
+import { UserButton } from '@clerk/clerk-react';
+import { useOnboarding } from './hooks/useOnboarding';
 import Answers from './components/Answers';
 import Editor from './components/Editor';
+import QuestionBar from './components/QuestionBar';
 
 export default function App() {
-  return (
-    <Box
-      sx={{
-        height: '100vh',
-        background: '#FAFAFA',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Minimal Header */}
+  const { isLoading, isRegistered, error, schemaName } = useOnboarding();
+
+  // Show loading state while checking/registering
+  if (isLoading) {
+    return (
       <Box
         sx={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E5E7EB',
-          height: '64px',
+          height: '100vh',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          px: 4,
-          flexShrink: 0,
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <CircularProgress size={48} sx={{ color: 'white', mb: 3 }} />
+        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+          Setting up your workspace...
+        </Typography>
+        <Typography sx={{ mt: 1, opacity: 0.9, fontSize: '14px' }}>
+          Creating your secure environment
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <Box
+        sx={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#FEE2E2',
+          padding: 4,
+        }}
+      >
+        <Box
+          sx={{
+            maxWidth: 500,
+            background: 'white',
+            borderRadius: '16px',
+            padding: 4,
+            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.1)',
+            textAlign: 'center',
+          }}
+        >
+          <Typography variant="h5" sx={{ fontWeight: 700, color: '#DC2626', mb: 2 }}>
+            Setup Error
+          </Typography>
+          <Typography sx={{ color: '#6B7280', mb: 3 }}>
+            {error}
+          </Typography>
+          <Typography sx={{ fontSize: '13px', color: '#9CA3AF' }}>
+            Please contact support or try refreshing the page.
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Main app (only shown when registered)
+  return (
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Top Bar */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 3,
+          py: 2,
+          borderBottom: '1px solid #E5E7EB',
+          background: 'white',
+          zIndex: 10,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Box
             sx={{
-              width: 32,
-              height: 32,
-              borderRadius: '6px',
-              background: '#000000',
+              width: 36,
+              height: 36,
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontWeight: 700,
+              fontWeight: 800,
+              fontSize: '18px',
               color: 'white',
-              fontSize: '16px',
-              letterSpacing: '-0.5px',
             }}
           >
             L
           </Box>
-          <Box sx={{ fontSize: '20px', fontWeight: 600, color: '#111827', letterSpacing: '-0.3px' }}>
-            LUMEN
+          <Box>
+            <Typography sx={{ fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>
+              LUMEN
+            </Typography>
+            {schemaName && (
+              <Typography sx={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {schemaName}
+              </Typography>
+            )}
           </Box>
         </Box>
+
+        <UserButton
+          afterSignOutUrl="/"
+          appearance={{
+            elements: {
+              avatarBox: {
+                width: 36,
+                height: 36,
+              },
+            },
+          }}
+        />
       </Box>
 
-      {/* Main Content Area - Fixed Height */}
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          px: 3,
-          py: 3,
-          gap: 3,
-          maxWidth: '1800px',
-          width: '100%',
-          margin: '0 auto',
-          overflow: 'hidden',
-          minHeight: 0, // Critical for flexbox scrolling
-        }}
-      >
-        {/* AI Responses Panel - Scrollable */}
+      {/* Main Content - Two Columns */}
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left: AI Answers with Tabs */}
         <Box
           sx={{
-            width: '480px',
-            background: '#FFFFFF',
-            border: '1px solid #E5E7EB',
-            borderRadius: '8px',
+            flex: 1,
+            borderRight: '1px solid #E5E7EB',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            minHeight: 0, // Critical for flexbox scrolling
+            background: '#FAFAFA',
           }}
         >
           <Answers />
         </Box>
 
-        {/* Document Editor Panel - Scrollable */}
-        <Box
-          sx={{
-            flex: 1,
-            background: '#FFFFFF',
-            border: '1px solid #E5E7EB',
-            borderRadius: '8px',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            minHeight: 0, // Critical for flexbox scrolling
+        {/* Right: Document Editor */}
+        <Box 
+          sx={{ 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            overflow: 'hidden' 
           }}
         >
           <Editor />
         </Box>
       </Box>
 
-      {/* Floating Chat Input */}
-      <Chat />
+      {/* Bottom: Question Bar */}
+      <QuestionBar />
     </Box>
   );
 }

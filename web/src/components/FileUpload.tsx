@@ -1,16 +1,19 @@
-// lumen/web/src/components/FileUpload.tsx
+// web/src/components/FileUpload.tsx
 import { useState, useRef } from 'react';
 import { Box, CircularProgress, IconButton } from '@mui/material';
 import { Upload, X, File, Check, AlertCircle } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
 import type { FileUploadResponse } from '../lib/api';
 
 interface FileUploadProps {
   threadId?: string;
   documentId?: string;
   onUploadComplete?: (files: FileUploadResponse[]) => void;
+  onClose?: () => void;
 }
 
-export default function FileUpload({ threadId, documentId, onUploadComplete }: FileUploadProps) {
+export default function FileUpload({ threadId, documentId, onUploadComplete, onClose }: FileUploadProps) {
+  const { getToken } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<FileUploadResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -30,14 +33,23 @@ export default function FileUpload({ threadId, documentId, onUploadComplete }: F
     setError(null);
 
     try {
+      // Get auth token
+      const token = await getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
       const uploadPromises = Array.from(files).map(async (file) => {
         const formData = new FormData();
         formData.append('file', file);
         if (threadId) formData.append('thread_id', threadId);
         if (documentId) formData.append('document_id', documentId);
 
-        const response = await fetch(`${import.meta.env.VITE_API_BASE}/files/upload`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/files/upload`, {
           method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
           body: formData,
         });
 
@@ -50,7 +62,7 @@ export default function FileUpload({ threadId, documentId, onUploadComplete }: F
       });
 
       const results = await Promise.all(uploadPromises);
-      setUploadedFiles(prev => [...prev, ...results]);
+      setUploadedFiles((prev) => [...prev, ...results]);
       onUploadComplete?.(results);
     } catch (err: any) {
       setError(err.message || 'Failed to upload files');
@@ -73,14 +85,32 @@ export default function FileUpload({ threadId, documentId, onUploadComplete }: F
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleUpload(e.dataTransfer.files);
     }
   };
 
-  const removeFile = (fileId: string) => {
-    setUploadedFiles(prev => prev.filter(f => f.file_id !== fileId));
+  const removeFile = async (fileId: string) => {
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      // Call delete API
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/files/${fileId}/delete`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      setUploadedFiles((prev) => prev.filter((f) => f.file_id !== fileId));
+    } catch (err) {
+      console.error('Failed to delete file:', err);
+    }
   };
 
   return (
@@ -159,10 +189,19 @@ export default function FileUpload({ threadId, documentId, onUploadComplete }: F
       {/* Uploaded Files List */}
       {uploadedFiles.length > 0 && (
         <Box sx={{ mt: 2 }}>
-          <Box sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', mb: 1, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <Box
+            sx={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#6B7280',
+              mb: 1,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
             Uploaded Files ({uploadedFiles.length})
           </Box>
-          
+
           {uploadedFiles.map((file) => (
             <Box
               key={file.file_id}

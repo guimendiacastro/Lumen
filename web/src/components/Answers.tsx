@@ -1,190 +1,222 @@
-import { Box, Button } from '@mui/material';
-import { Sparkles, Brain, Zap, ArrowRight } from 'lucide-react';
-import { useApp } from '../store';
-import { extractDraftOnly } from '../lib/extract';
+// web/src/components/Answers.tsx
 import { useState } from 'react';
+import { Box, Button, CircularProgress, Tabs, Tab } from '@mui/material';
+import { Plus, Replace, Sparkles } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
+import { useApp } from '../store';
 
-const providerConfig = {
-  openai: { name: 'GPT-4', icon: Sparkles, color: '#10A37F' },
-  anthropic: { name: 'Claude', icon: Brain, color: '#D97757' },
-  xai: { name: 'Grok', icon: Zap, color: '#5865F2' },
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: 'GPT-4',
+  anthropic: 'Claude',
+  xai: 'Grok',
+};
+
+const PROVIDER_COLORS: Record<string, string> = {
+  openai: '#10A37F',
+  anthropic: '#D97706',
+  xai: '#000000',
 };
 
 export default function Answers() {
-  const answers = useApp(s => s.answers);
-  const pick = useApp(s => s.pickAnswer);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const { getToken } = useAuth();
+  const answers = useApp((s) => s.answers);
+  const pickAnswer = useApp((s) => s.pickAnswer);
+  const [activeTab, setActiveTab] = useState(0);
+  const [applying, setApplying] = useState<string | null>(null);
 
-  const useAsDoc = async (a: any) => {
-    const draft = extractDraftOnly(a.text);
-    await pick({ ...a, text: draft }, 'replace');
+  const handlePick = async (card: any, mode: 'append' | 'replace') => {
+    setApplying(card.id);
+    try {
+      const token = await getToken();
+      await pickAnswer(card, mode, token);
+    } finally {
+      setApplying(null);
+    }
   };
 
+  // Empty state
   if (answers.length === 0) {
     return (
       <Box
         sx={{
+          flex: 1,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          height: '100%',
-          p: 4,
+          color: '#9CA3AF',
+          px: 4,
           textAlign: 'center',
         }}
       >
-        <Box
-          sx={{
-            width: 56,
-            height: 56,
-            borderRadius: '12px',
-            background: '#F9FAFB',
-            border: '1px solid #E5E7EB',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            mb: 2,
-          }}
-        >
-          <Sparkles size={28} style={{ color: '#6B7280' }} />
+        <Sparkles size={48} color="#D1D5DB" style={{ marginBottom: '16px' }} />
+        <Box sx={{ fontSize: '18px', fontWeight: 600, color: '#6B7280', mb: 1 }}>
+          Ask AI for Help
         </Box>
-        <Box sx={{ fontSize: '15px', fontWeight: 600, color: '#111827', mb: 1 }}>
-          No responses yet
-        </Box>
-        <Box sx={{ fontSize: '14px', color: '#6B7280', lineHeight: 1.5, maxWidth: '280px' }}>
-          Ask a question to compare AI responses
+        <Box sx={{ fontSize: '14px', color: '#9CA3AF', maxWidth: '400px' }}>
+          Type your question below to get responses from multiple AI models
         </Box>
       </Box>
     );
   }
 
-  const selectedAnswer = answers[selectedIndex] || answers[0];
-  const draft = extractDraftOnly(selectedAnswer.text);
-  const config = providerConfig[selectedAnswer.provider] || {
-    name: selectedAnswer.provider,
-    icon: Brain,
-    color: '#6B7280'
-  };
-  const Icon = config.icon;
+  const currentAnswer = answers[activeTab];
+  const isApplying = applying === currentAnswer?.id;
+  const providerColor = PROVIDER_COLORS[currentAnswer?.provider] || '#6B7280';
 
   return (
     <Box
       sx={{
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
         overflow: 'hidden',
       }}
     >
-      {/* Header with model selector */}
+      {/* Header with Tabs */}
       <Box
         sx={{
           borderBottom: '1px solid #E5E7EB',
-          p: 2,
+          background: 'white',
         }}
       >
-        <Box sx={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', mb: 1.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          AI Response
-        </Box>
-        
-        {/* Model Tabs */}
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          {answers.map((answer, idx) => {
-            const cfg = providerConfig[answer.provider] || { name: answer.provider, icon: Brain, color: '#6B7280' };
-            const TabIcon = cfg.icon;
-            const isSelected = selectedIndex === idx;
-            
+        <Tabs
+          value={activeTab}
+          onChange={(_, newValue) => setActiveTab(newValue)}
+          sx={{
+            px: 2,
+            minHeight: '56px',
+            '& .MuiTabs-indicator': {
+              height: '3px',
+              borderRadius: '3px 3px 0 0',
+            },
+          }}
+        >
+          {answers.map((answer, index) => {
+            const color = PROVIDER_COLORS[answer.provider];
             return (
-              <Box
+              <Tab
                 key={answer.id}
-                component="button"
-                onClick={() => setSelectedIndex(idx)}
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: answer.ok ? color : '#EF4444',
+                      }}
+                    />
+                    <Box sx={{ fontWeight: 600 }}>
+                      {PROVIDER_LABELS[answer.provider] || answer.provider}
+                    </Box>
+                    {answer.latencyMs && (
+                      <Box sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 500 }}>
+                        {answer.latencyMs}ms
+                      </Box>
+                    )}
+                  </Box>
+                }
                 sx={{
-                  flex: 1,
-                  padding: '8px 12px',
-                  border: '1px solid',
-                  borderColor: isSelected ? '#000000' : '#E5E7EB',
-                  borderRadius: '6px',
-                  background: isSelected ? '#000000' : '#FFFFFF',
-                  color: isSelected ? '#FFFFFF' : '#6B7280',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 0.75,
-                  transition: 'all 0.15s ease',
-                  '&:hover': {
-                    borderColor: isSelected ? '#000000' : '#9CA3AF',
-                    background: isSelected ? '#1F2937' : '#F9FAFB',
+                  textTransform: 'none',
+                  fontSize: '14px',
+                  minHeight: '56px',
+                  '&.Mui-selected': {
+                    color: color,
                   },
                 }}
-              >
-                <TabIcon size={14} />
-                {cfg.name}
-              </Box>
+              />
             );
           })}
-        </Box>
+        </Tabs>
       </Box>
 
-      {/* Content Area */}
+      {/* Answer Content */}
       <Box
         sx={{
           flex: 1,
           overflowY: 'auto',
           p: 3,
-          fontSize: '15px',
-          lineHeight: '1.7',
-          color: '#374151',
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          whiteSpace: 'pre-wrap',
-          '&::-webkit-scrollbar': {
-            width: '6px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'transparent',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: '#E5E7EB',
-            borderRadius: '3px',
-          },
-          '&::-webkit-scrollbar-thumb:hover': {
-            background: '#D1D5DB',
-          },
+          background: 'white',
         }}
       >
-        {draft}
+        <Box
+          sx={{
+            fontSize: '15px',
+            lineHeight: 1.7,
+            color: '#374151',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          }}
+        >
+          {currentAnswer?.text}
+        </Box>
       </Box>
 
-      {/* Action Button */}
+      {/* Action Buttons */}
       <Box
         sx={{
+          p: 3,
           borderTop: '1px solid #E5E7EB',
-          p: 2,
+          background: '#FAFAFA',
+          display: 'flex',
+          gap: 2,
         }}
       >
         <Button
-          onClick={() => useAsDoc(selectedAnswer)}
-          fullWidth
-          endIcon={<ArrowRight size={18} />}
+          startIcon={isApplying ? <CircularProgress size={14} /> : <Plus size={18} />}
+          onClick={() => handlePick(currentAnswer, 'append')}
+          disabled={isApplying}
+          variant="outlined"
           sx={{
-            borderRadius: '8px',
+            flex: 1,
+            py: 1.5,
+            borderRadius: '10px',
             textTransform: 'none',
             fontWeight: 600,
             fontSize: '14px',
-            py: 1.5,
-            background: '#000000',
-            color: '#FFFFFF',
-            border: 'none',
+            borderColor: '#E5E7EB',
+            color: '#374151',
             '&:hover': {
-              background: '#1F2937',
+              background: '#F9FAFB',
+              borderColor: '#D1D5DB',
             },
-            transition: 'all 0.15s ease',
+            '&:disabled': {
+              background: '#F3F4F6',
+              color: '#9CA3AF',
+            },
           }}
         >
-          Use this response
+          Append to Document
+        </Button>
+        <Button
+          startIcon={isApplying ? <CircularProgress size={14} /> : <Replace size={18} />}
+          onClick={() => handlePick(currentAnswer, 'replace')}
+          disabled={isApplying}
+          variant="contained"
+          sx={{
+            flex: 1,
+            py: 1.5,
+            borderRadius: '10px',
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '14px',
+            background: providerColor,
+            color: 'white',
+            boxShadow: 'none',
+            '&:hover': {
+              background: providerColor,
+              opacity: 0.9,
+              boxShadow: 'none',
+            },
+            '&:disabled': {
+              background: '#F3F4F6',
+              color: '#9CA3AF',
+            },
+          }}
+        >
+          Replace Document
         </Button>
       </Box>
     </Box>
