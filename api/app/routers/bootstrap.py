@@ -102,35 +102,8 @@ CREATE TABLE IF NOT EXISTS {schema}.uploaded_files (
   processed_at TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS {schema}.file_chunks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  file_id UUID NOT NULL REFERENCES {schema}.uploaded_files(id) ON DELETE CASCADE,
-  chunk_index INT NOT NULL,
-  chunk_text_enc BYTEA NOT NULL,
-  chunk_type TEXT NOT NULL DEFAULT 'semantic',
-  token_count INT,
-  metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-  page_number INT,
-  section_title TEXT,
-  content_type TEXT DEFAULT 'text',
-  has_table BOOLEAN DEFAULT FALSE,
-  is_particulars BOOLEAN DEFAULT FALSE,
-  boost_factor DECIMAL(3,2) DEFAULT 1.0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(file_id, chunk_index)
-);
 
-CREATE TABLE IF NOT EXISTS {schema}.chunk_embeddings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  chunk_id UUID NOT NULL REFERENCES {schema}.file_chunks(id) ON DELETE CASCADE,
-  embedding_model TEXT NOT NULL,
-  embedding_vector FLOAT8[] NOT NULL,
-  last_rerank_score DECIMAL(5,4),
-  last_rerank_query TEXT,
-  last_rerank_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(chunk_id, embedding_model)
-);
+
 
 CREATE INDEX IF NOT EXISTS idx_documents_created_by ON {schema}.documents(created_by);
 CREATE INDEX IF NOT EXISTS idx_doc_versions_document_id ON {schema}.doc_versions(document_id);

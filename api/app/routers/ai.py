@@ -19,11 +19,9 @@ from ..utils.document_processor import expand_unchanged_sections
 from ..utils.edit_commands import generate_edit_system_prompt, apply_edits, EditPlan
 from ..utils.validation import validate_completeness, format_validation_report
 
-# NEW: query expansion for summary/overview prompts
-from ..utils.chunking import expand_query_for_summary
 
-# Reuse existing embedding + retriever services (no new deps/tables)
-from ..services.file_processor import EmbeddingService, RAGRetriever
+from ..services.rag_service import get_rag_service
+
 
 log = logging.getLogger("lumen.ai")
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -33,7 +31,7 @@ MAX_DOC_CHARS = int(os.getenv("MAX_DOC_CHARS", "24000"))
 
 # Tunables for improved recall
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "15"))
-RAG_MIN_SIM = float(os.getenv("RAG_MIN_SIMILARITY", "0.50"))
+RAG_MIN_SIM = float(os.getenv("RAG_MIN_SIMILARITY", "0.7"))
 
 class CompareIn(BaseModel):
     thread_id: str
@@ -127,6 +125,8 @@ async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
     Retrieve file context for the thread.
     For small files (direct context): include full content.
     """
+    log.info(f"=== _get_file_context called for thread_id: {thread_id} ===")
+    
     async with member_session(schema) as s:
         result = await s.execute(
             text("""
@@ -142,7 +142,10 @@ async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
         total_chars = 0
         MAX_CONTEXT_CHARS = 20000
         
-        for row in result:
+        rows = result.all()
+        log.info(f"=== Found {len(rows)} uploaded files for thread ===")
+        
+        for row in rows:
             file_id = str(row[0])
             filename = row[1]
             content_enc = row[2]
@@ -154,9 +157,14 @@ async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
             )
             chunk_count = chunk_result.first()[0]
             
+            log.info(f"=== File {filename}: chunk_count={chunk_count} ===")
+            
             if chunk_count == 0:
                 # Direct context file
                 content = await decrypt_text(key_id, content_enc)
+                
+                log.info(f"=== Decrypted content length: {len(content)} ===")
+                log.info(f"=== Content preview: {content[:200]} ===")
                 
                 if total_chars + len(content) > MAX_CONTEXT_CHARS:
                     remaining = MAX_CONTEXT_CHARS - total_chars
@@ -169,9 +177,12 @@ async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
                     break
     
     if not files:
+        log.info("=== No files found for direct context ===")
         return ""
     
-    return f"\n\n<uploaded_files>\n{' '.join(files)}\n</uploaded_files>\n"
+    result_str = f"\n\n<uploaded_files>\n{' '.join(files)}\n</uploaded_files>\n"
+    log.info(f"=== Returning file context, length: {len(result_str)} ===")
+    return result_str
 
 
 async def _get_rag_context(
@@ -179,97 +190,70 @@ async def _get_rag_context(
     key_id: str,
     thread_id: str,
     query: str,
-    top_k: int = RAG_TOP_K,
-    min_similarity: float = RAG_MIN_SIM
+    top_k: int = 15,
+    min_similarity: float = 0.5
 ) -> str:
     """
-    Retrieve relevant chunks from large files using RAG.
-
-    Improvements:
-      - Query expansion for summary-like prompts
-      - Higher top_k for broader coverage
-      - Lower similarity threshold for better recall
-    Uses existing file_chunks + chunk_embeddings tables via RAGRetriever.
+    Retrieve RAG context using new LlamaIndex service.
     """
-    # Candidate files that have chunked content
+    log.info(f"=== _get_rag_context CALLED (NEW) ===")
+    log.info(f"thread_id: {thread_id}, query: {query[:100]}...")
+    
+    # Find files in this thread
     async with member_session(schema) as s:
         result = await s.execute(
             text("""
-                SELECT DISTINCT f.id, f.filename
-                FROM uploaded_files f
-                JOIN file_chunks c ON c.file_id = f.id
-                WHERE f.thread_id = :tid AND f.status = 'ready'
+                SELECT id, filename
+                FROM uploaded_files
+                WHERE thread_id = :tid AND status = 'ready'
             """),
             {"tid": thread_id}
         )
-        
-        file_ids = [(str(row[0]), row[1]) for row in result]
+        files = [(str(row[0]), row[1]) for row in result]
     
-    if not file_ids:
+    if not files:
+        log.info("=== No files found ===")
         return ""
-
-    # Expand the query if it's a summary/overview ask
-    expanded_query = expand_query_for_summary(query)
-
-    all_chunks = []
-    embedding_service = EmbeddingService()
-    retriever = RAGRetriever(embedding_service)
-
-    # Collect (plaintext_chunk, embedding) per file and retrieve
-    for file_id, filename in file_ids:
-        chunk_data = []
-        async with member_session(schema) as s:
-            result = await s.execute(
-                text("""
-                    SELECT c.chunk_text_enc, e.embedding_vector
-                    FROM file_chunks c
-                    JOIN chunk_embeddings e ON e.chunk_id = c.id
-                    WHERE c.file_id = :fid
-                    ORDER BY c.chunk_index
-                """),
-                {"fid": file_id}
-            )
-            
-            for row in result:
-                chunk_text = await decrypt_text(key_id, row[0])
-                embedding = row[1]
-                chunk_data.append((chunk_text, embedding))
-        
-        if not chunk_data:
-            continue
-
-        # Per-file cap so we keep diversity across files
-        relevant = await retriever.retrieve_relevant_chunks(
-            expanded_query,
-            chunk_data,
-            top_k=min(8, top_k),
-            min_similarity=min_similarity
+    
+    log.info(f"=== Found {len(files)} files ===")
+    for file_id, filename in files:
+        log.info(f"  - {filename} (id: {file_id})")
+    
+    # Retrieve from all files
+    rag_service = get_rag_service()
+    file_ids = [f[0] for f in files]
+    
+    try:
+        chunks = await rag_service.retrieve_from_multiple_files(
+            file_ids=file_ids,
+            query=query,
+            top_k_per_file=max(top_k // len(files), 3),  # Distribute across files
+            min_score=min_similarity
         )
         
-        for chunk_text, similarity in relevant:
-            all_chunks.append({
-                "filename": filename,
-                "text": chunk_text,
-                "similarity": similarity
-            })
-    
-    if not all_chunks:
+        if not chunks:
+            log.warning("=== No relevant chunks found ===")
+            return ""
+        
+        log.info(f"=== Retrieved {len(chunks)} chunks ===")
+        
+        # Format chunks for LLM
+        rag_text = "<retrieved_context>\n"
+        rag_text += "The following information was retrieved from uploaded documents:\n\n"
+        
+        for i, chunk in enumerate(chunks, 1):
+            filename = chunk.metadata.get("filename", "unknown")
+            rag_text += f"[Chunk {i} from {filename}] (relevance: {chunk.score:.2f})\n"
+            rag_text += f"{chunk.text}\n\n"
+        
+        rag_text += "</retrieved_context>"
+        
+        return rag_text
+        
+    except Exception as e:
+        log.error(f"RAG retrieval failed: {e}")
         return ""
 
-    # Keep the best overall
-    all_chunks.sort(key=lambda x: x["similarity"], reverse=True)
-    all_chunks = all_chunks[:top_k]
-
-    # Format as a single block
-    parts = []
-    for ch in all_chunks:
-        parts.append(
-            f"<relevant_chunk file='{ch['filename']}' similarity='{ch['similarity']:.3f}'>\n"
-            f"{ch['text']}\n"
-            f"</relevant_chunk>"
-        )
-
-    return f"\n\n<relevant_file_content>\n{''.join(parts)}\n</relevant_file_content>\n"
 
 
 @router.post("/compare", response_model=CompareOut)
@@ -353,6 +337,8 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     # Load latest instruction now so we can query RAG with it
     latest_instruction = await _load_sanitized_message(schema, key_id, body.message_id)
 
+    log.info(f"=== ABOUT TO CALL _get_rag_context ===")
+
     # IMPROVED RAG: expanded query, more chunks, lower threshold
     rag_block = await _get_rag_context(
         schema=schema,
@@ -362,8 +348,17 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
         top_k=RAG_TOP_K,
         min_similarity=RAG_MIN_SIM
     )
+
+    log.info(f"=== RETURNED FROM _get_rag_context ===")
+    log.info(f"=== RAG block length: {len(rag_block) if rag_block else 0} ===")
+    log.info(f"=== RAG block preview: {rag_block[:200] if rag_block else 'EMPTY'} ===")
+    
     if rag_block:
+        log.info(f"=== ADDING RAG BLOCK TO MESSAGES ===")
         messages.append({"role": "system", "content": rag_block})
+    else:
+        log.warning(f"=== RAG BLOCK IS EMPTY, NOT ADDING TO MESSAGES ===")
+    
 
     # Finally append the user's latest instruction
     messages.append({"role": "user", "content": latest_instruction})

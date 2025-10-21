@@ -32,3 +32,24 @@ dist/
 
 # Docker
 docker-compose.override.yml
+
+# Qdrant data
+infra/qdrant_data/
+.qdrant/
+
+# Vector store and cache files
+storage/
+.cache/
+.vector_cache/
+*_cache/
+.embeddings/
+.index_cache/
+
+# RAG and Vector Stores
+.qdrant/
+storage/
+.cache/
+.vector_cache/
+*_cache/
+.embeddings/
+.index_cache/
