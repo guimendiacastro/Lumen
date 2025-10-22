@@ -1,9 +1,16 @@
-// web/src/components/Answers.tsx
+// web/src/components/Answers-advanced.tsx
+// This version uses the diff library for better diff visualization
+// To use this: 
+// 1. Run: npm install diff && npm install --save-dev @types/diff
+// 2. Create web/src/utils/diff.ts (see diff.ts in outputs)
+// 3. Replace Answers.tsx with this file
+
 import { useState } from 'react';
-import { Box, Button, CircularProgress, Tabs, Tab } from '@mui/material';
-import { Plus, Replace, Sparkles } from 'lucide-react';
+import { Box, Button, CircularProgress, Tabs, Tab, Chip } from '@mui/material';
+import { Replace, Sparkles, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
+import { formatDiffWithContext, getDiffStats } from '../utils/diff';
 
 const PROVIDER_LABELS: Record<string, string> = {
   openai: 'GPT-4',
@@ -20,15 +27,16 @@ const PROVIDER_COLORS: Record<string, string> = {
 export default function Answers() {
   const { getToken } = useAuth();
   const answers = useApp((s) => s.answers);
+  const document = useApp((s) => s.document);
   const pickAnswer = useApp((s) => s.pickAnswer);
   const [activeTab, setActiveTab] = useState(0);
   const [applying, setApplying] = useState<string | null>(null);
 
-  const handlePick = async (card: any, mode: 'append' | 'replace') => {
+  const handlePick = async (card: any) => {
     setApplying(card.id);
     try {
       const token = await getToken();
-      await pickAnswer(card, mode, token);
+      await pickAnswer(card, 'replace', token);
     } finally {
       setApplying(null);
     }
@@ -63,6 +71,15 @@ export default function Answers() {
   const currentAnswer = answers[activeTab];
   const isApplying = applying === currentAnswer?.id;
   const providerColor = PROVIDER_COLORS[currentAnswer?.provider] || '#6B7280';
+  
+  // Compute diff and stats
+  const diffText = document && currentAnswer
+    ? formatDiffWithContext(document.content, currentAnswer.text, 3)
+    : currentAnswer?.text || '';
+  
+  const stats = document && currentAnswer
+    ? getDiffStats(document.content, currentAnswer.text)
+    : { added: 0, removed: 0, modified: 0 };
 
   return (
     <Box
@@ -131,7 +148,55 @@ export default function Answers() {
         </Tabs>
       </Box>
 
-      {/* Answer Content */}
+      {/* Diff Stats Bar */}
+      {document && stats.modified > 0 && (
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            px: 3,
+            py: 2,
+            background: '#F9FAFB',
+            borderBottom: '1px solid #E5E7EB',
+          }}
+        >
+          <Chip
+            icon={<TrendingUp size={16} />}
+            label={`+${stats.added} lines`}
+            size="small"
+            sx={{
+              background: '#ECFDF5',
+              color: '#059669',
+              fontWeight: 600,
+              fontSize: '12px',
+            }}
+          />
+          <Chip
+            icon={<TrendingDown size={16} />}
+            label={`-${stats.removed} lines`}
+            size="small"
+            sx={{
+              background: '#FEF2F2',
+              color: '#DC2626',
+              fontWeight: 600,
+              fontSize: '12px',
+            }}
+          />
+          <Box
+            sx={{
+              fontSize: '12px',
+              color: '#6B7280',
+              display: 'flex',
+              alignItems: 'center',
+              ml: 'auto',
+            }}
+          >
+            {stats.modified} changes detected
+          </Box>
+        </Box>
+      )}
+
+      {/* Diff Content */}
       <Box
         sx={{
           flex: 1,
@@ -142,61 +207,84 @@ export default function Answers() {
       >
         <Box
           sx={{
-            fontSize: '15px',
-            lineHeight: 1.7,
-            color: '#374151',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontSize: '13px',
+            fontWeight: 600,
+            color: '#6B7280',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            mb: 2,
           }}
         >
-          {currentAnswer?.text}
+          Document Changes
+        </Box>
+        <Box
+          sx={{
+            fontSize: '13px',
+            lineHeight: 1.6,
+            fontFamily: 'Monaco, "Courier New", Consolas, monospace',
+            background: '#F9FAFB',
+            border: '1px solid #E5E7EB',
+            borderRadius: '8px',
+            p: 2,
+            '& .diff-line': {
+              padding: '2px 4px',
+              borderRadius: '2px',
+            },
+          }}
+        >
+          {diffText.split('\n').map((line, idx) => {
+            let color = '#374151';
+            let background = 'transparent';
+            let fontWeight = 400;
+            
+            if (line.startsWith('+')) {
+              color = '#059669';
+              background = '#ECFDF5';
+              fontWeight = 500;
+            } else if (line.startsWith('-')) {
+              color = '#DC2626';
+              background = '#FEF2F2';
+              fontWeight = 500;
+            } else if (line.startsWith('  ')) {
+              color = '#9CA3AF';
+            }
+            
+            return (
+              <Box
+                key={idx}
+                className="diff-line"
+                sx={{
+                  color,
+                  background,
+                  fontWeight,
+                  whiteSpace: 'pre',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {line || ' '}
+              </Box>
+            );
+          })}
         </Box>
       </Box>
 
-      {/* Action Buttons */}
+      {/* Action Button - Only "Replace Document" */}
       <Box
         sx={{
           p: 3,
           borderTop: '1px solid #E5E7EB',
           background: '#FAFAFA',
           display: 'flex',
-          gap: 2,
+          justifyContent: 'center',
         }}
       >
         <Button
-          startIcon={isApplying ? <CircularProgress size={14} /> : <Plus size={18} />}
-          onClick={() => handlePick(currentAnswer, 'append')}
-          disabled={isApplying}
-          variant="outlined"
-          sx={{
-            flex: 1,
-            py: 1.5,
-            borderRadius: '10px',
-            textTransform: 'none',
-            fontWeight: 600,
-            fontSize: '14px',
-            borderColor: '#E5E7EB',
-            color: '#374151',
-            '&:hover': {
-              background: '#F9FAFB',
-              borderColor: '#D1D5DB',
-            },
-            '&:disabled': {
-              background: '#F3F4F6',
-              color: '#9CA3AF',
-            },
-          }}
-        >
-          Append to Document
-        </Button>
-        <Button
           startIcon={isApplying ? <CircularProgress size={14} /> : <Replace size={18} />}
-          onClick={() => handlePick(currentAnswer, 'replace')}
+          onClick={() => handlePick(currentAnswer)}
           disabled={isApplying}
           variant="contained"
           sx={{
-            flex: 1,
+            minWidth: '220px',
             py: 1.5,
             borderRadius: '10px',
             textTransform: 'none',

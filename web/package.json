@@ -15,6 +15,7 @@
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^7.3.2",
     "axios": "^1.12.2",
+    "diff": "^8.0.2",
     "lucide-react": "^0.544.0",
     "monaco-editor": "^0.53.0",
     "react": "^19.1.1",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
+    "@types/diff": "^7.0.2",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",

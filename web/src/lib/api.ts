@@ -151,9 +151,13 @@ export const api = {
     apiPost<MessageOut>(`/threads/${threadId}/messages`, { text: content }, token),
   compare: (threadId: string, messageId: string, token?: string | null) =>
     apiPost<CompareOut>('/ai/compare', { thread_id: threadId, message_id: messageId }, token),
+  
+  // FIXED: Added provider and documentId parameters
   selection: (
     requestId: string,
     responseId: string,
+    provider: 'openai' | 'anthropic' | 'xai',
+    documentId: string,
     mode: 'append' | 'replace' | 'insert_at',
     textOverride?: string,
     token?: string | null
@@ -163,11 +167,14 @@ export const api = {
       {
         request_id: requestId,
         response_id: responseId,
+        provider: provider,
+        document_id: documentId,
         mode,
         selected_text_override: textOverride,
       },
       token
     ),
+  
   uploadFile: (
     file: File,
     documentId?: string | null,
@@ -184,8 +191,6 @@ export const api = {
     const params = new URLSearchParams();
     if (documentId) params.append('document_id', documentId);
     if (threadId) params.append('thread_id', threadId);
-    return apiGet<FileMetadata[]>(`/files/list?${params.toString()}`, token);
+    return apiGet<{ files: FileMetadata[] }>(`/files?${params}`, token);
   },
-  deleteFile: (fileId: string, token?: string | null) =>
-    apiPost<{ ok: boolean }>(`/files/${fileId}/delete`, {}, token),
 };

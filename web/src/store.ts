@@ -109,12 +109,23 @@ export const useApp = create<State & Actions>((set, get) => ({
     });
   },
 
+  // FIXED: Pass provider and document_id to the API
   async pickAnswer(card, mode = 'append', token?: string | null) {
     const st = get();
     if (!st.document || !st.lastRequestId) return;
 
     const override = card.text && card.text.length > 0 ? card.text : undefined;
-    await api.selection(st.lastRequestId, card.id, mode, override, token);
+    
+    // Pass provider and document_id to fix the 422 error
+    await api.selection(
+      st.lastRequestId, 
+      card.id, 
+      card.provider,        // Provider field required by backend
+      st.document.id,       // Document ID required by backend
+      mode, 
+      override, 
+      token
+    );
 
     // Refresh doc to show applied changes
     const fresh = await api.getDoc(st.document.id, token);
