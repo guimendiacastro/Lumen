@@ -12,7 +12,7 @@ from .routers import (
     files,
     me,
     onboarding,
-    health,  # ADD THIS
+    health, 
 )
 
 app = FastAPI(title="LUMEN API", version="1.0.0")
@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(health.router)      # ADD THIS FIRST
+app.include_router(health.router)     
 app.include_router(onboarding.router)
 app.include_router(bootstrap.router)
 app.include_router(documents.router)

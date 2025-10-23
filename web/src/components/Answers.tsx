@@ -1,10 +1,3 @@
-// web/src/components/Answers-advanced.tsx
-// This version uses the diff library for better diff visualization
-// To use this: 
-// 1. Run: npm install diff && npm install --save-dev @types/diff
-// 2. Create web/src/utils/diff.ts (see diff.ts in outputs)
-// 3. Replace Answers.tsx with this file
-
 import { useState } from 'react';
 import { Box, Button, CircularProgress, Tabs, Tab, Chip } from '@mui/material';
 import { Replace, Sparkles, TrendingUp, TrendingDown } from 'lucide-react';
@@ -95,27 +88,27 @@ export default function Answers() {
         sx={{
           borderBottom: '1px solid #E5E7EB',
           background: 'white',
+          px: 1,
         }}
       >
         <Tabs
           value={activeTab}
           onChange={(_, newValue) => setActiveTab(newValue)}
           sx={{
-            px: 2,
-            minHeight: '56px',
+            minHeight: '60px',
             '& .MuiTabs-indicator': {
               height: '3px',
               borderRadius: '3px 3px 0 0',
             },
           }}
         >
-          {answers.map((answer, index) => {
+          {answers.map((answer) => {
             const color = PROVIDER_COLORS[answer.provider];
             return (
               <Tab
                 key={answer.id}
                 label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5 }}>
                     <Box
                       sx={{
                         width: 8,
@@ -137,7 +130,8 @@ export default function Answers() {
                 sx={{
                   textTransform: 'none',
                   fontSize: '14px',
-                  minHeight: '56px',
+                  minHeight: '60px',
+                  px: 3,
                   '&.Mui-selected': {
                     color: color,
                   },
@@ -155,7 +149,7 @@ export default function Answers() {
             display: 'flex',
             gap: 2,
             px: 3,
-            py: 2,
+            py: 2.5,
             background: '#F9FAFB',
             borderBottom: '1px solid #E5E7EB',
           }}
@@ -225,7 +219,8 @@ export default function Answers() {
             background: '#F9FAFB',
             border: '1px solid #E5E7EB',
             borderRadius: '8px',
-            p: 2,
+            p: 2.5,
+            overflowX: 'auto',
             '& .diff-line': {
               padding: '2px 4px',
               borderRadius: '2px',
@@ -257,8 +252,8 @@ export default function Answers() {
                   color,
                   background,
                   fontWeight,
-                  whiteSpace: 'pre',
-                  wordBreak: 'break-all',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
                 }}
               >
                 {line || ' '}
@@ -268,7 +263,7 @@ export default function Answers() {
         </Box>
       </Box>
 
-      {/* Action Button - Only "Replace Document" */}
+      {/* Action Button */}
       <Box
         sx={{
           p: 3,

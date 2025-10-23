@@ -1,4 +1,3 @@
-// web/src/components/FileUpload.tsx
 import { useState, useRef } from 'react';
 import { Box, CircularProgress, IconButton } from '@mui/material';
 import { Upload, X, File, Check, AlertCircle } from 'lucide-react';
@@ -33,7 +32,6 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
     setError(null);
 
     try {
-      // Get auth token
       const token = await getToken();
       if (!token) {
         throw new Error('Not authenticated');
@@ -98,7 +96,6 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
         throw new Error('Not authenticated');
       }
 
-      // Call delete API
       await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/files/${fileId}/delete`, {
         method: 'POST',
         headers: {
@@ -122,15 +119,15 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
         onDragOver={handleDrag}
         onDrop={handleDrop}
         sx={{
-          border: dragActive ? '2px dashed #000' : '2px dashed #E5E7EB',
+          border: dragActive ? '2px dashed #667eea' : '2px dashed #E5E7EB',
           borderRadius: '8px',
-          p: 3,
+          p: 2,
           textAlign: 'center',
-          background: dragActive ? '#F9FAFB' : '#FAFAFA',
+          background: dragActive ? '#F0F4FF' : 'white',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
           '&:hover': {
-            borderColor: '#9CA3AF',
+            borderColor: '#667eea',
             background: '#F9FAFB',
           },
         }}
@@ -146,19 +143,19 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
         />
 
         {uploading ? (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-            <CircularProgress size={20} sx={{ color: '#6B7280' }} />
-            <Box sx={{ fontSize: '14px', color: '#6B7280', fontWeight: 500 }}>
-              Uploading and processing...
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, py: 1 }}>
+            <CircularProgress size={18} sx={{ color: '#667eea' }} />
+            <Box sx={{ fontSize: '13px', color: '#6B7280', fontWeight: 500 }}>
+              Uploading...
             </Box>
           </Box>
         ) : (
           <>
-            <Upload size={32} color="#9CA3AF" style={{ marginBottom: '12px' }} />
-            <Box sx={{ fontSize: '14px', fontWeight: 600, color: '#111827', mb: 0.5 }}>
-              Drop files here or click to upload
+            <Upload size={28} color="#667eea" style={{ marginBottom: '8px' }} />
+            <Box sx={{ fontSize: '13px', fontWeight: 600, color: '#111827', mb: 0.5 }}>
+              Drop files or click to upload
             </Box>
-            <Box sx={{ fontSize: '12px', color: '#6B7280' }}>
+            <Box sx={{ fontSize: '11px', color: '#6B7280' }}>
               PDF, DOCX, TXT, MD up to 30MB
             </Box>
           </>
@@ -191,7 +188,7 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
         <Box sx={{ mt: 2 }}>
           <Box
             sx={{
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: 600,
               color: '#6B7280',
               mb: 1,
@@ -209,7 +206,7 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                p: 2,
+                p: 1.5,
                 mb: 1,
                 background: '#FFFFFF',
                 border: '1px solid #E5E7EB',
@@ -222,8 +219,8 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
                 <Box
                   sx={{
-                    width: 32,
-                    height: 32,
+                    width: 28,
+                    height: 28,
                     borderRadius: '6px',
                     background: '#F3F4F6',
                     display: 'flex',
@@ -232,13 +229,13 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                     flexShrink: 0,
                   }}
                 >
-                  <File size={16} color="#6B7280" />
+                  <File size={14} color="#6B7280" />
                 </Box>
 
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box
                     sx={{
-                      fontSize: '13px',
+                      fontSize: '12px',
                       fontWeight: 600,
                       color: '#111827',
                       overflow: 'hidden',
@@ -248,7 +245,7 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                   >
                     {file.filename}
                   </Box>
-                  <Box sx={{ fontSize: '11px', color: '#6B7280', mt: 0.25 }}>
+                  <Box sx={{ fontSize: '10px', color: '#6B7280', mt: 0.25 }}>
                     {formatFileSize(file.size_bytes)}
                     {file.use_direct_context ? (
                       <Box component="span" sx={{ ml: 1, color: '#059669', fontWeight: 600 }}>
@@ -276,8 +273,8 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                       borderRadius: '4px',
                     }}
                   >
-                    <Check size={12} color="#059669" />
-                    <Box sx={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>
+                    <Check size={10} color="#059669" />
+                    <Box sx={{ fontSize: '10px', fontWeight: 600, color: '#059669' }}>
                       Ready
                     </Box>
                   </Box>
@@ -287,12 +284,12 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                   size="small"
                   onClick={() => removeFile(file.file_id)}
                   sx={{
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     '&:hover': { background: '#F3F4F6' },
                   }}
                 >
-                  <X size={14} color="#6B7280" />
+                  <X size={12} color="#6B7280" />
                 </IconButton>
               </Box>
             </Box>

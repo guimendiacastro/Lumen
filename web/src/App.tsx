@@ -1,4 +1,3 @@
-// web/src/App.tsx
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { UserButton } from '@clerk/clerk-react';
 import { useOnboarding } from './hooks/useOnboarding';
@@ -9,7 +8,7 @@ import QuestionBar from './components/QuestionBar';
 export default function App() {
   const { isLoading, isRegistered, error, schemaName } = useOnboarding();
 
-  // Show loading state while checking/registering
+  // Show loading state
   if (isLoading) {
     return (
       <Box
@@ -72,7 +71,7 @@ export default function App() {
     );
   }
 
-  // Main app (only shown when registered)
+  // Main app
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top Bar */}
@@ -81,8 +80,8 @@ export default function App() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          px: 3,
-          py: 2,
+          px: 4,
+          py: 2.5,
           borderBottom: '1px solid #E5E7EB',
           background: 'white',
           zIndex: 10,
@@ -130,9 +129,9 @@ export default function App() {
         />
       </Box>
 
-      {/* Main Content - Two Columns */}
+      {/* Main Content */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Left: AI Answers with Tabs */}
+        {/* Left: AI Answers */}
         <Box
           sx={{
             flex: 1,

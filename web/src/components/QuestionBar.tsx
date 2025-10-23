@@ -1,6 +1,5 @@
-// web/src/components/QuestionBar.tsx
 import { useState, useRef, useEffect } from 'react';
-import { Box, CircularProgress, IconButton } from '@mui/material';
+import { Box, CircularProgress, IconButton, Dialog } from '@mui/material';
 import { ArrowUp, Paperclip, X } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
@@ -87,24 +86,23 @@ export default function QuestionBar() {
   }
 
   return (
-    <Box
-      sx={{
-        borderTop: '1px solid #E5E7EB',
-        background: 'white',
-        boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.04)',
-      }}
-    >
-      {/* File Upload Section */}
-      {showUpload && threadId && (
-        <Box
-          sx={{
-            p: 3,
-            borderBottom: '1px solid #E5E7EB',
-            background: '#FAFAFA',
-          }}
-        >
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Box sx={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+    <>
+      {/* File Upload Dialog */}
+      <Dialog
+        open={showUpload && !!threadId}
+        onClose={() => setShowUpload(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '12px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+          },
+        }}
+      >
+        <Box sx={{ p: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
+            <Box sx={{ fontSize: '16px', fontWeight: 700, color: '#111827' }}>
               Upload Files
             </Box>
             <IconButton
@@ -128,112 +126,127 @@ export default function QuestionBar() {
             }}
           />
         </Box>
-      )}
+      </Dialog>
 
-      {/* Input Area */}
-      <Box sx={{ p: 3 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            gap: 1.5,
-            background: '#F9FAFB',
-            border: '2px solid #E5E7EB',
-            borderRadius: '16px',
-            padding: '12px 16px',
-            transition: 'all 0.2s ease',
-            '&:focus-within': {
-              borderColor: '#667eea',
-              background: 'white',
-            },
-          }}
-        >
-          <IconButton
-            size="small"
-            onClick={() => setShowUpload(!showUpload)}
-            disabled={isLoading}
+      {/* Question Bar */}
+      <Box
+        sx={{
+          borderTop: '1px solid #E5E7EB',
+          background: 'white',
+          boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.04)',
+        }}
+      >
+        {/* Input Area */}
+        <Box sx={{ p: 3 }}>
+          <Box
             sx={{
-              width: 40,
-              height: 40,
-              borderRadius: '10px',
-              background: showUpload ? '#E0E7FF' : 'transparent',
-              color: showUpload ? '#667eea' : '#6B7280',
-              '&:hover': {
-                background: showUpload ? '#E0E7FF' : '#F3F4F6',
-              },
-              '&:disabled': {
-                opacity: 0.5,
-              },
-            }}
-          >
-            <Paperclip size={20} />
-          </IconButton>
-
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask AI to help with your document..."
-            disabled={isLoading}
-            style={{
-              flex: 1,
-              border: 'none',
-              outline: 'none',
-              resize: 'none',
-              fontSize: '15px',
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              lineHeight: '24px',
-              padding: '8px 0',
-              minHeight: '24px',
-              maxHeight: '120px',
-              background: 'transparent',
-              color: '#111827',
-            }}
-          />
-
-          <IconButton
-            size="small"
-            onClick={handleAsk}
-            disabled={!input.trim() || isLoading}
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: '10px',
-              background: input.trim() && !isLoading ? '#667eea' : '#F3F4F6',
-              color: input.trim() && !isLoading ? '#FFFFFF' : '#9CA3AF',
-              '&:hover': {
-                background: input.trim() && !isLoading ? '#5568d3' : '#F3F4F6',
-              },
-              '&:disabled': {
-                background: '#F3F4F6',
-                color: '#9CA3AF',
-              },
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 1.5,
+              background: '#F9FAFB',
+              border: '2px solid #E5E7EB',
+              borderRadius: '16px',
+              padding: '10px 14px',
               transition: 'all 0.2s ease',
+              '&:focus-within': {
+                borderColor: '#667eea',
+                background: 'white',
+              },
             }}
           >
-            {isLoading ? <CircularProgress size={20} sx={{ color: '#9CA3AF' }} /> : <ArrowUp size={20} />}
-          </IconButton>
-        </Box>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                height: '36px',
+              }}
+            >
+              <IconButton
+                size="small"
+                onClick={() => setShowUpload(!showUpload)}
+                disabled={isLoading}
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '8px',
+                  background: showUpload ? '#E0E7FF' : 'transparent',
+                  color: showUpload ? '#667eea' : '#6B7280',
+                  '&:hover': {
+                    background: showUpload ? '#E0E7FF' : '#F3F4F6',
+                  },
+                  '&:disabled': {
+                    opacity: 0.5,
+                  },
+                }}
+              >
+                <Paperclip size={18} />
+              </IconButton>
+            </Box>
 
-        {/* Hint Text */}
-        <Box
-          sx={{
-            mt: 1.5,
-            px: 1,
-            fontSize: '12px',
-            color: '#9CA3AF',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 2,
-          }}
-        >
-          <Box>Press Enter to send, Shift+Enter for new line</Box>
-          <Box sx={{ color: '#D1D5DB' }}>•</Box>
-          <Box>Powered by GPT-4, Claude & Grok</Box>
+            <Box
+              sx={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                minHeight: '36px',
+              }}
+            >
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask AI to help with your document..."
+                disabled={isLoading}
+                style={{
+                  width: '100%',
+                  border: 'none',
+                  outline: 'none',
+                  resize: 'none',
+                  fontSize: '15px',
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  lineHeight: '20px',
+                  padding: '8px 0',
+                  minHeight: '20px',
+                  maxHeight: '120px',
+                  background: 'transparent',
+                  color: '#111827',
+                }}
+              />
+            </Box>
+
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                height: '36px',
+              }}
+            >
+              <IconButton
+                size="small"
+                onClick={handleAsk}
+                disabled={!input.trim() || isLoading}
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '8px',
+                  background: input.trim() && !isLoading ? '#667eea' : '#F3F4F6',
+                  color: input.trim() && !isLoading ? '#FFFFFF' : '#9CA3AF',
+                  '&:hover': {
+                    background: input.trim() && !isLoading ? '#5568D3' : '#F3F4F6',
+                  },
+                  '&:disabled': {
+                    background: '#F3F4F6',
+                    color: '#9CA3AF',
+                  },
+                }}
+              >
+                {isLoading ? <CircularProgress size={16} sx={{ color: '#9CA3AF' }} /> : <ArrowUp size={18} />}
+              </IconButton>
+            </Box>
+          </Box>
         </Box>
       </Box>
-    </Box>
+    </>
   );
 }

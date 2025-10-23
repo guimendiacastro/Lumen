@@ -1,4 +1,3 @@
-// web/src/components/Editor.tsx
 import * as React from 'react';
 import * as monaco from 'monaco-editor';
 import { Box, Button } from '@mui/material';
@@ -26,7 +25,7 @@ export default function Editor() {
       minimap: { enabled: false },
       fontSize: 15,
       lineHeight: 26,
-      padding: { top: 20, bottom: 20 },
+      padding: { top: 24, bottom: 24 },
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       smoothScrolling: true,
       cursorBlinking: 'smooth',
@@ -100,7 +99,8 @@ export default function Editor() {
       <Box
         sx={{
           borderBottom: '1px solid #E5E7EB',
-          p: 2,
+          px: 4,
+          py: 2.5,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -151,24 +151,32 @@ export default function Editor() {
         </Button>
       </Box>
 
-      {/* Monaco Editor Container */}
+      {/* Monaco Editor Container with padding */}
       <Box
-        ref={containerRef}
         sx={{
           flex: 1,
           overflow: 'hidden',
           background: '#FFFFFF',
-          '& .monaco-editor': {
-            '& .monaco-scrollable-element > .scrollbar > .slider': {
-              background: '#E5E7EB !important',
-              borderRadius: '3px',
-            },
-            '& .monaco-scrollable-element > .scrollbar > .slider:hover': {
-              background: '#D1D5DB !important',
-            },
-          },
+          px: 4,
+          py: 2,
         }}
-      />
+      >
+        <Box
+          ref={containerRef}
+          sx={{
+            height: '100%',
+            '& .monaco-editor': {
+              '& .monaco-scrollable-element > .scrollbar > .slider': {
+                background: '#E5E7EB !important',
+                borderRadius: '3px',
+              },
+              '& .monaco-scrollable-element > .scrollbar > .slider:hover': {
+                background: '#D1D5DB !important',
+              },
+            },
+          }}
+        />
+      </Box>
     </Box>
   );
 }
