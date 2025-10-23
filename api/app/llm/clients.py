@@ -6,8 +6,11 @@ from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-sonnet-20240229")
 XAI_API_KEY = os.getenv("XAI_API_KEY")
+XAI_MODEL = os.getenv("XAI_MODEL", "grok-1")
 
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
@@ -17,10 +20,13 @@ xai_client = AsyncOpenAI(
 ) if XAI_API_KEY else None
 
 
-async def call_openai(messages: list[dict], model: str = "gpt-4o", json_mode: bool = False) -> dict:
+async def call_openai(messages: list[dict], model: str = None, json_mode: bool = False) -> dict:
     """Call OpenAI API with optional JSON mode."""
     if not openai_client:
         return {"provider": "openai", "text": "", "ok": False, "error": "OpenAI API key not configured"}
+    
+    # Use environment variable model if none specified
+    model = model or OPENAI_MODEL
     
     start = time.time()
     try:
@@ -56,10 +62,13 @@ async def call_openai(messages: list[dict], model: str = "gpt-4o", json_mode: bo
         }
 
 
-async def call_anthropic(messages: list[dict], model: str = "claude-sonnet-4-20250514", json_mode: bool = False) -> dict:
+async def call_anthropic(messages: list[dict], model: str = None, json_mode: bool = False) -> dict:
     """Call Anthropic API."""
     if not anthropic_client:
         return {"provider": "anthropic", "text": "", "ok": False, "error": "Anthropic API key not configured"}
+    
+    # Use environment variable model if none specified
+    model = model or ANTHROPIC_MODEL
     
     start = time.time()
     try:
@@ -106,10 +115,13 @@ async def call_anthropic(messages: list[dict], model: str = "claude-sonnet-4-202
         }
 
 
-async def call_xai(messages: list[dict], model: str = "grok-beta", json_mode: bool = False) -> dict:
+async def call_xai(messages: list[dict], model: str = None, json_mode: bool = False) -> dict:
     """Call xAI/Grok API (JSON mode not supported yet)."""
     if not xai_client:
         return {"provider": "xai", "text": "", "ok": False, "error": "xAI API key not configured"}
+    
+    # Use environment variable model if none specified
+    model = model or XAI_MODEL
     
     start = time.time()
     try:
