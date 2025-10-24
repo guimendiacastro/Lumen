@@ -18,6 +18,15 @@ def validate_completeness(generated: str, original: str | None = None) -> List[V
     """
     issues: List[ValidationIssue] = []
 
+    # Check for preamble text that indicates the LLM didn't follow format instructions
+    if has_preamble_text(generated):
+        first_line = generated.split('\n')[0][:100]
+        issues.append(ValidationIssue(
+            severity="warning",
+            message="Response contains preamble text (e.g., 'Sure, here is...', 'Below is...')",
+            location=f"Start of response: '{first_line}...'"
+        ))
+
     # Check for placeholder patterns (skip typical signature blocks later)
     placeholder_patterns = [
         (r'\[.*?(?:remain|unchanged|same|previous).*?\]', "Placeholder found"),
@@ -162,6 +171,36 @@ def _is_placeholder_document(text: str) -> bool:
         for p in placeholders:
             if p.lower() in stripped.lower():
                 return True
+    return False
+
+
+def has_preamble_text(text: str) -> bool:
+    """
+    Check if response contains conversational preamble/meta-commentary.
+
+    This detects cases where the LLM adds explanatory text like:
+    - "Sure, here's the document..."
+    - "I've updated the content..."
+    - "Below is the revised version..."
+
+    Returns True if preamble indicators are found in the first 150 characters.
+    """
+    if not text:
+        return False
+
+    # Check only the beginning of the response
+    first_150_chars = text[:150].lower()
+
+    preamble_indicators = [
+        r'\b(sure,?\s+)?(here\'?s?|below is|here is)\b',
+        r'\b(i\'ve|i have|let me)\b',
+        r'\b(updated|revised|created|prepared)\s+(the\s+)?(document|draft|content)\b',
+    ]
+
+    for pattern in preamble_indicators:
+        if re.search(pattern, first_150_chars, re.IGNORECASE):
+            return True
+
     return False
 
 

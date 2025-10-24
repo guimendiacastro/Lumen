@@ -113,6 +113,11 @@ RULES:
 8. Order edits logically (top to bottom of document)
 9. NEVER regenerate unchanged content
 10. Keep anchors precise but not overly long
+11. ALL content must use proper Markdown formatting:
+    - Use # for main title, ## for sections, ### for subsections
+    - Use **bold** for emphasis on key terms
+    - Use numbered lists (1., 2., 3.) or bullet points (- item) where appropriate
+    - Use proper paragraph spacing with blank lines between sections
 
 Example:
 User: "Add more detail to the Amendment clause"

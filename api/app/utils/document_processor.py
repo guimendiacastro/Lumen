@@ -2,6 +2,59 @@
 import re
 
 
+def extract_clean_response(response_text: str) -> str:
+    """
+    Extract clean document content from LLM response,
+    removing any preamble or explanatory text.
+
+    This function handles cases where the LLM adds conversational
+    preambles like "Sure, here is the document..." which break
+    text replacement operations.
+
+    Extraction strategies (in order):
+    1. Extract content between <document>...</document> tags
+    2. Extract JSON from code blocks (for structured edits)
+    3. Remove common preamble patterns
+
+    Args:
+        response_text: Raw LLM response text
+
+    Returns:
+        Cleaned response text ready for processing
+    """
+    if not response_text:
+        return ""
+
+    # Strategy 1: Try to extract content between <document>...</document> tags
+    doc_match = re.search(r'<document>(.*?)</document>', response_text, re.DOTALL | re.IGNORECASE)
+    if doc_match:
+        return doc_match.group(1).strip()
+
+    # Strategy 2: Try to extract JSON from code blocks for structured edits
+    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+    if json_match:
+        return json_match.group(1).strip()
+
+    # Strategy 3: Remove common preamble patterns
+    # These patterns match conversational preambles that LLMs often add
+    patterns_to_remove = [
+        # "Sure, here's the document:", "Below is the revised content:", etc.
+        r'^(Sure,?\s+)?(here\'?s?|below is|here is)\s+(the\s+)?(updated|revised|complete|full|requested)?\s*(document|content|text|draft|version)?[:\.]?\s*',
+        # "I've updated the document:", "I have revised the content:", etc.
+        r'^(I\'ve|I have)\s+(updated|revised|created|prepared|made|completed)\s+.*?[:\.]?\s*',
+        # "Let me provide...", "I'll create...", etc.
+        r'^(Let me|I\'ll|I will)\s+.*?[:\.]?\s*',
+        # "Here you go:", "There you go:", etc.
+        r'^(Here|There)\s+you\s+go[:\.]?\s*',
+    ]
+
+    cleaned = response_text
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, '', cleaned, count=1, flags=re.IGNORECASE | re.MULTILINE)
+
+    return cleaned.strip()
+
+
 def expand_unchanged_sections(draft: str, current_doc: str) -> str:
     """
     Replace placeholders like '[Sections 1-4 remain unchanged]' with actual content

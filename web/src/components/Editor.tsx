@@ -1,84 +1,38 @@
 import * as React from 'react';
-import * as monaco from 'monaco-editor';
 import { Box, Button } from '@mui/material';
 import { Check } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
+import RichTextEditor from './RichTextEditor';
 
 export default function Editor() {
   const { getToken } = useAuth();
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const editorRef = React.useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const doc = useApp((s) => s.document);
   const saveDoc = useApp((s) => s.saveDoc);
   const setEditBuffer = useApp((s) => s.setEditBuffer);
   const [isSaving, setIsSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [editorContent, setEditorContent] = React.useState(doc?.content ?? '');
 
+  // Update editor content when document changes
   React.useEffect(() => {
-    if (!containerRef.current) return;
-
-    editorRef.current = monaco.editor.create(containerRef.current, {
-      value: doc?.content ?? '',
-      language: 'markdown',
-      automaticLayout: true,
-      minimap: { enabled: false },
-      fontSize: 15,
-      lineHeight: 26,
-      padding: { top: 24, bottom: 24 },
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      smoothScrolling: true,
-      cursorBlinking: 'smooth',
-      cursorSmoothCaretAnimation: 'on',
-      renderLineHighlight: 'none',
-      scrollBeyondLastLine: false,
-      wordWrap: 'on',
-      wrappingIndent: 'same',
-      theme: 'vs',
-      lineNumbers: 'off',
-      glyphMargin: false,
-      folding: false,
-      lineDecorationsWidth: 0,
-      lineNumbersMinChars: 0,
-      renderWhitespace: 'none',
-      overviewRulerBorder: false,
-      hideCursorInOverviewRuler: true,
-      scrollbar: {
-        vertical: 'visible',
-        horizontal: 'visible',
-        verticalScrollbarSize: 6,
-        horizontalScrollbarSize: 6,
-      },
-    });
-
-    const sub = editorRef.current.onDidChangeModelContent(() => {
-      const v = editorRef.current?.getValue() ?? '';
-      setEditBuffer(v);
-      setSaved(false);
-    });
-
-    return () => {
-      sub.dispose();
-      editorRef.current?.dispose();
-    };
-  }, [setEditBuffer]);
-
-  React.useEffect(() => {
-    if (doc && editorRef.current) {
-      const currentValue = editorRef.current.getValue();
-      if (currentValue !== doc.content) {
-        editorRef.current.setValue(doc.content);
-      }
+    if (doc?.content) {
+      setEditorContent(doc.content);
     }
   }, [doc?.content]);
 
+  const handleEditorChange = (content: string) => {
+    setEditorContent(content);
+    setEditBuffer(content);
+    setSaved(false);
+  };
+
   const handleSave = async () => {
-    const content = editorRef.current?.getValue();
-    if (!content) return;
+    if (!editorContent) return;
     setIsSaving(true);
     try {
       const token = await getToken();
-      await saveDoc(content, token);
+      await saveDoc(editorContent, token);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -151,31 +105,15 @@ export default function Editor() {
         </Button>
       </Box>
 
-      {/* Monaco Editor Container with padding */}
+      {/* Rich Text Editor Container */}
       <Box
         sx={{
           flex: 1,
           overflow: 'hidden',
           background: '#FFFFFF',
-          px: 4,
-          py: 2,
         }}
       >
-        <Box
-          ref={containerRef}
-          sx={{
-            height: '100%',
-            '& .monaco-editor': {
-              '& .monaco-scrollable-element > .scrollbar > .slider': {
-                background: '#E5E7EB !important',
-                borderRadius: '3px',
-              },
-              '& .monaco-scrollable-element > .scrollbar > .slider:hover': {
-                background: '#D1D5DB !important',
-              },
-            },
-          }}
-        />
+        <RichTextEditor value={editorContent} onChange={handleEditorChange} />
       </Box>
     </Box>
   );

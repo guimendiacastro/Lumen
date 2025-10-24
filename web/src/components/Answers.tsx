@@ -4,6 +4,7 @@ import { Replace, Sparkles, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
 import { formatDiffWithContext, getDiffStats } from '../utils/diff';
+import { renderMarkdownLine } from '../utils/markdown-renderer';
 
 const PROVIDER_LABELS: Record<string, string> = {
   openai: 'GPT-4',
@@ -64,13 +65,26 @@ export default function Answers() {
   const currentAnswer = answers[activeTab];
   const isApplying = applying === currentAnswer?.id;
   const providerColor = PROVIDER_COLORS[currentAnswer?.provider] || '#6B7280';
-  
+
+  // Helper to detect if document is just a placeholder
+  const isPlaceholderDocument = (content: string): boolean => {
+    const stripped = content.trim();
+    const placeholders = ['# New Document', 'Type here', 'Start typing', 'Enter text', 'Untitled'];
+    if (stripped.length < 100) {
+      return placeholders.some(p => stripped.toLowerCase().includes(p.toLowerCase()));
+    }
+    return false;
+  };
+
+  // Only show diff if the original document is not a placeholder
+  const shouldShowDiff = document && !isPlaceholderDocument(document.content);
+
   // Compute diff and stats
-  const diffText = document && currentAnswer
+  const diffText = shouldShowDiff && currentAnswer
     ? formatDiffWithContext(document.content, currentAnswer.text, 3)
     : currentAnswer?.text || '';
-  
-  const stats = document && currentAnswer
+
+  const stats = shouldShowDiff && currentAnswer
     ? getDiffStats(document.content, currentAnswer.text)
     : { added: 0, removed: 0, modified: 0 };
 
@@ -143,7 +157,7 @@ export default function Answers() {
       </Box>
 
       {/* Diff Stats Bar */}
-      {document && stats.modified > 0 && (
+      {shouldShowDiff && stats.modified > 0 && (
         <Box
           sx={{
             display: 'flex',
@@ -209,29 +223,32 @@ export default function Answers() {
             mb: 2,
           }}
         >
-          Document Changes
+          {shouldShowDiff ? 'Document Changes' : 'Suggested Document'}
         </Box>
         <Box
           sx={{
-            fontSize: '13px',
+            fontSize: '14px',
             lineHeight: 1.6,
-            fontFamily: 'Monaco, "Courier New", Consolas, monospace',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
             background: '#F9FAFB',
             border: '1px solid #E5E7EB',
             borderRadius: '8px',
             p: 2.5,
             overflowX: 'auto',
             '& .diff-line': {
-              padding: '2px 4px',
-              borderRadius: '2px',
+              padding: '4px 8px',
+              borderRadius: '3px',
+              marginBottom: '2px',
             },
           }}
         >
-          {diffText.split('\n').map((line, idx) => {
+          {shouldShowDiff ? (
+            // Show diff view when document is not placeholder
+            diffText.split('\n').map((line, idx) => {
             let color = '#374151';
             let background = 'transparent';
             let fontWeight = 400;
-            
+
             if (line.startsWith('+')) {
               color = '#059669';
               background = '#ECFDF5';
@@ -243,7 +260,7 @@ export default function Answers() {
             } else if (line.startsWith('  ')) {
               color = '#9CA3AF';
             }
-            
+
             return (
               <Box
                 key={idx}
@@ -256,10 +273,34 @@ export default function Answers() {
                   wordBreak: 'break-word',
                 }}
               >
-                {line || ' '}
+                {line.startsWith('+') || line.startsWith('-') || line.startsWith('  ') ? (
+                  <>
+                    <Box component="span" sx={{ opacity: 0.5, marginRight: '8px' }}>
+                      {line[0]}
+                    </Box>
+                    {renderMarkdownLine(line)}
+                  </>
+                ) : (
+                  line || ' '
+                )}
               </Box>
             );
-          })}
+          })
+          ) : (
+            // Show full document preview when original is placeholder
+            currentAnswer?.text.split('\n').map((line, idx) => (
+              <Box
+                key={idx}
+                sx={{
+                  padding: '4px 0',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {renderMarkdownLine('  ' + line)}
+              </Box>
+            ))
+          )}
         </Box>
       </Box>
 

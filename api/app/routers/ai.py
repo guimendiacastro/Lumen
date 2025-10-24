@@ -15,7 +15,7 @@ from ..db import fetch_member_mapping, member_session
 from ..crypto.vault import encrypt_text, decrypt_text
 from ..llm.clients import fanout_with_history
 from ..utils.debug import dump_messages, debug_enabled
-from ..utils.document_processor import expand_unchanged_sections
+from ..utils.document_processor import expand_unchanged_sections, extract_clean_response
 from ..utils.edit_commands import generate_edit_system_prompt, apply_edits, EditPlan
 from ..utils.validation import validate_completeness, format_validation_report
 
@@ -302,10 +302,25 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
         system_preamble = generate_edit_system_prompt()
     else:
         system_preamble = (
-            "You are a legal drafting assistant. "
-            "Return exactly ONE draft inside <document>...</document> and nothing else.\n"
-            "IMPORTANT: Always output the COMPLETE document. Never use placeholders like "
-            "'[Sections remain unchanged]' or '[Previous content]'. Always include all sections in full."
+            "You are a legal drafting assistant.\n\n"
+            "CRITICAL FORMAT REQUIREMENTS:\n"
+            "- Your response MUST start with the opening <document> tag\n"
+            "- Place the complete document content between <document>...</document> tags\n"
+            "- Your response MUST end with the closing </document> tag\n"
+            "- DO NOT include ANY text before <document> or after </document>\n"
+            "- DO NOT add preamble text like 'Sure, here is...', 'Below is...', 'I have created...', etc.\n"
+            "- The first character of your response must be '<' (the start of <document>)\n\n"
+            "CONTENT REQUIREMENTS:\n"
+            "- Always output the COMPLETE document with all sections\n"
+            "- Never use placeholders like '[Sections remain unchanged]' or '[Previous content]'\n"
+            "- Include all sections in full, even if unchanged\n"
+            "- Use proper Markdown formatting for all content:\n"
+            "  * Use # for main title, ## for sections, ### for subsections\n"
+            "  * Use **bold** for emphasis on key terms\n"
+            "  * Use numbered lists (1., 2., 3.) or bullet points (- item) where appropriate\n"
+            "  * Use proper paragraph spacing with blank lines between sections\n\n"
+            "Example correct format:\n"
+            "<document>\n# Document Title\n\n## 1. Section Name\n\n1.1 **Key Term**: Description here.\n\n[Your complete document content in Markdown]\n</document>"
         )
 
     if body.system:
@@ -399,12 +414,21 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
                          res.get("provider", "-"),
                          response_text)
 
-            expanded_text = response_text
+            # Clean the response to remove any preamble text
+            cleaned_text = extract_clean_response(response_text)
+
+            if debug_enabled() and cleaned_text != response_text:
+                log.info("=== LLM RESPONSE (cleaned) :: provider=%s ===\nRemoved preamble. New length: %d (was %d)",
+                         res.get("provider", "-"),
+                         len(cleaned_text),
+                         len(response_text))
+
+            expanded_text = cleaned_text
 
             if use_structured_edits and doc_content:
                 try:
-                    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-                    json_str = json_match.group(1) if json_match else response_text
+                    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', cleaned_text, re.DOTALL)
+                    json_str = json_match.group(1) if json_match else cleaned_text
                     parsed_plan = EditPlan.model_validate_json(json_str)
 
                     if debug_enabled():
@@ -417,11 +441,11 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
                     # Fall back to placeholder expansion
                     log.warning("Failed to parse edit commands for provider=%s: %s",
                                 res.get("provider", "-"), str(e))
-                    expanded_text = expand_unchanged_sections(response_text, doc_content)
+                    expanded_text = expand_unchanged_sections(cleaned_text, doc_content)
 
             elif doc_content:
                 # No structured edits mode → still expand placeholders
-                expanded_text = expand_unchanged_sections(response_text, doc_content)
+                expanded_text = expand_unchanged_sections(cleaned_text, doc_content)
 
             # Validate completeness vs the source doc (if any)
             validation_issues = validate_completeness(expanded_text, doc_content)
