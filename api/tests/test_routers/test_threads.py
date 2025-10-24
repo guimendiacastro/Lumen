@@ -403,7 +403,7 @@ class TestListThreads:
     ):
         """Should not include messages in list (lightweight response)."""
         thread_id = await create_test_thread()
-        await create_test_message(thread_id, text="Test message")
+        await create_test_message(thread_id, message_text="Test message")
 
         response = await async_client.get("/threads")
 
@@ -439,8 +439,8 @@ class TestGetThreadWithMessages:
     ):
         """Should return thread with decrypted sanitized messages."""
         thread_id = await create_test_thread()
-        await create_test_message(thread_id, text="First message")
-        await create_test_message(thread_id, text="Second message")
+        await create_test_message(thread_id, message_text="First message")
+        await create_test_message(thread_id, message_text="Second message")
 
         response = await async_client.get(f"/threads/{thread_id}")
 
@@ -457,11 +457,11 @@ class TestGetThreadWithMessages:
 
         thread_id = await create_test_thread()
 
-        msg1_id = await create_test_message(thread_id, text="First")
+        msg1_id = await create_test_message(thread_id, message_text="First")
         await asyncio.sleep(0.01)
-        msg2_id = await create_test_message(thread_id, text="Second")
+        msg2_id = await create_test_message(thread_id, message_text="Second")
         await asyncio.sleep(0.01)
-        msg3_id = await create_test_message(thread_id, text="Third")
+        msg3_id = await create_test_message(thread_id, message_text="Third")
 
         response = await async_client.get(f"/threads/{thread_id}")
         data = response.json()
@@ -477,7 +477,7 @@ class TestGetThreadWithMessages:
     ):
         """Should decrypt sanitized message content."""
         thread_id = await create_test_thread()
-        await create_test_message(thread_id, text="Test message")
+        await create_test_message(thread_id, message_text="Test message")
 
         response = await async_client.get(f"/threads/{thread_id}")
 
@@ -531,7 +531,7 @@ class TestGetThreadWithMessages:
     ):
         """Should return messages with expected structure."""
         thread_id = await create_test_thread()
-        await create_test_message(thread_id, text="Test")
+        await create_test_message(thread_id, message_text="Test")
 
         response = await async_client.get(f"/threads/{thread_id}")
 
@@ -555,8 +555,8 @@ class TestListMessagesEndpoint:
     ):
         """Should return messages in items array."""
         thread_id = await create_test_thread()
-        await create_test_message(thread_id, text="Message 1")
-        await create_test_message(thread_id, text="Message 2")
+        await create_test_message(thread_id, message_text="Message 1")
+        await create_test_message(thread_id, message_text="Message 2")
 
         response = await async_client.get(f"/threads/{thread_id}/messages")
 

@@ -27,12 +27,22 @@ from app.db import member_session
 # Test configuration
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/lumen_test"
+    "postgresql+asyncpg://gui:@localhost:5432/lumen_test"  # Changed from postgres to gui
 )
 TEST_SCHEMA_NAME = "test_mem_01"
 TEST_ORG_ID = "test_org_01"
 TEST_USER_ID = "test_user_01"
 TEST_VAULT_KEY = "test_key_01"
+
+
+@pytest_asyncio.fixture(scope="session")
+def event_loop():
+    """Override default event loop with session scope for compatibility."""
+    import asyncio
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    yield loop
+    loop.close()
 
 
 # ============================================================================
@@ -238,56 +248,74 @@ async def test_engine():
     await engine.dispose()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_db_patches():
+    """Set up database mocks that persist across all tests."""
+    async def mock_fetch_member_mapping(org_id: str):
+        if org_id == TEST_ORG_ID:
+            return {
+                "schema_name": TEST_SCHEMA_NAME,
+                "vault_key_id": TEST_VAULT_KEY
+            }
+        return None
+
+    # Patch in all modules where fetch_member_mapping is imported
+    patches = [
+        patch("app.db.fetch_member_mapping", mock_fetch_member_mapping),
+        patch("app.routers.ai.fetch_member_mapping", mock_fetch_member_mapping),
+        patch("app.routers.threads.fetch_member_mapping", mock_fetch_member_mapping),
+        patch("app.routers.documents.fetch_member_mapping", mock_fetch_member_mapping),
+        patch("app.routers.files.fetch_member_mapping", mock_fetch_member_mapping),
+        patch("app.routers.selections.fetch_member_mapping", mock_fetch_member_mapping),
+        patch("app.routers.me.fetch_member_mapping", mock_fetch_member_mapping),
+    ]
+
+    for p in patches:
+        p.start()
+
+    yield
+
+    for p in patches:
+        p.stop()
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def db_session(test_engine) -> AsyncIterator[AsyncSession]:
-    """
-    Create a database session with transaction rollback.
-
-    This fixture:
-    1. Creates a connection from the engine
-    2. Begins a transaction
-    3. Creates an async session
-    4. Sets search_path to test schema
-    5. Yields session for test
-    6. Rolls back transaction after test (no permanent changes)
-
-    The autouse=True makes this run for every test automatically.
-    """
+    """Create a database session with transaction rollback."""
     async with test_engine.connect() as conn:
-        # Begin transaction
         trans = await conn.begin()
 
-        # Create session bound to this connection
         AsyncSessionLocal = async_sessionmaker(
             bind=conn,
             expire_on_commit=False,
         )
 
         async with AsyncSessionLocal() as session:
-            # Set search path to test schema
             await session.execute(text(f"SET LOCAL search_path TO {TEST_SCHEMA_NAME}, public"))
 
-            # Patch member_session to return this session
             @asynccontextmanager
             async def mock_member_session(schema_name: str):
                 yield session
 
-            with patch("app.db.member_session", mock_member_session):
-                # Patch fetch_member_mapping to return test schema
-                async def mock_fetch_member_mapping(org_id: str):
-                    if org_id == TEST_ORG_ID:
-                        return {
-                            "schema_name": TEST_SCHEMA_NAME,
-                            "vault_key_id": TEST_VAULT_KEY
-                        }
-                    return None
+            # Patch in all modules where member_session is imported
+            patches = [
+                patch("app.db.member_session", mock_member_session),
+                patch("app.routers.ai.member_session", mock_member_session),
+                patch("app.routers.threads.member_session", mock_member_session),
+                patch("app.routers.documents.member_session", mock_member_session),
+                patch("app.routers.files.member_session", mock_member_session),
+                patch("app.routers.selections.member_session", mock_member_session),
+            ]
 
-                with patch("app.db.fetch_member_mapping", mock_fetch_member_mapping):
-                    yield session
+            for p in patches:
+                p.start()
 
-            # Rollback transaction (all changes discarded)
+            yield session
+
+            for p in patches:
+                p.stop()
+
             await trans.rollback()
-
 
 # ============================================================================
 # Authentication Fixtures
@@ -312,7 +340,7 @@ def override_get_identity(test_identity):
 # ============================================================================
 
 @pytest_asyncio.fixture
-async def async_client(override_get_identity) -> AsyncIterator[AsyncClient]:
+async def async_client(override_get_identity, db_session) -> AsyncIterator[AsyncClient]:
     """
     Create an async HTTP client for testing FastAPI endpoints.
 
@@ -333,7 +361,7 @@ async def async_client(override_get_identity) -> AsyncIterator[AsyncClient]:
 # Vault Mocking Fixtures
 # ============================================================================
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_vault():
     """
     Mock Vault encrypt_text and decrypt_text functions.
@@ -353,9 +381,34 @@ def mock_vault():
         # Fallback for different format
         return ciphertext_bytes.decode("utf-8")
 
-    with patch("app.crypto.vault.encrypt_text", side_effect=mock_encrypt) as mock_enc, \
-         patch("app.crypto.vault.decrypt_text", side_effect=mock_decrypt) as mock_dec:
-        yield {"encrypt": mock_enc, "decrypt": mock_dec}
+    # Create shared mocks that will be used across all patches
+    mock_enc = AsyncMock(side_effect=mock_encrypt)
+    mock_dec = AsyncMock(side_effect=mock_decrypt)
+
+    # Patch in all modules where vault functions are imported, using the same mock objects
+    patches = [
+        patch("app.crypto.vault.encrypt_text", mock_enc),
+        patch("app.crypto.vault.decrypt_text", mock_dec),
+        patch("app.routers.ai.encrypt_text", mock_enc),
+        patch("app.routers.ai.decrypt_text", mock_dec),
+        patch("app.routers.threads.encrypt_text", mock_enc),
+        patch("app.routers.threads.decrypt_text", mock_dec),
+        patch("app.routers.documents.encrypt_text", mock_enc),
+        patch("app.routers.documents.decrypt_text", mock_dec),
+        patch("app.routers.files.encrypt_text", mock_enc),
+        patch("app.routers.files.decrypt_text", mock_dec),
+        patch("app.routers.selections.encrypt_text", mock_enc),
+        patch("app.routers.selections.decrypt_text", mock_dec),
+    ]
+
+    for p in patches:
+        p.start()
+
+    # Return the shared Mock objects
+    yield {"encrypt": mock_enc, "decrypt": mock_dec}
+
+    for p in patches:
+        p.stop()
 
 
 # ============================================================================
@@ -411,28 +464,38 @@ def mock_llm_clients():
 
     Returns mock responses for OpenAI, Anthropic, and xAI providers.
     """
-    mock_responses = {
-        "openai": {
-            "content": "OpenAI draft response",
-            "usage": {"input_tokens": 100, "output_tokens": 50},
-            "latency_ms": 500
+    mock_responses = [
+        {
+            "provider": "openai",
+            "text": "OpenAI draft response",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "latency_ms": 500,
+            "ok": True
         },
-        "anthropic": {
-            "content": "Anthropic draft response",
-            "usage": {"input_tokens": 100, "output_tokens": 50},
-            "latency_ms": 600
+        {
+            "provider": "anthropic",
+            "text": "Anthropic draft response",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "latency_ms": 600,
+            "ok": True
         },
-        "xai": {
-            "content": "xAI draft response",
-            "usage": {"input_tokens": 100, "output_tokens": 50},
-            "latency_ms": 450
+        {
+            "provider": "xai",
+            "text": "xAI draft response",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "latency_ms": 450,
+            "ok": True
         }
-    }
+    ]
 
     async def mock_fanout(messages):
         return mock_responses
 
-    with patch("app.llm.clients.fanout_with_history", side_effect=mock_fanout):
+    # Patch where the function is imported (in the router module)
+    with patch("app.routers.ai.fanout_with_history", side_effect=mock_fanout):
         yield mock_responses
 
 
@@ -544,13 +607,13 @@ def create_test_message(db_session, mock_vault):
     """
     async def _create_message(
         thread_id: str,
-        text: str = "Test message",
+        message_text: str = "Test message",
         role: str = "user"
     ) -> str:
         from app.crypto.vault import encrypt_text
 
-        text_enc = await encrypt_text(TEST_VAULT_KEY, text)
-        sanitized_enc = await encrypt_text(TEST_VAULT_KEY, text)  # Same for test
+        text_enc = await encrypt_text(TEST_VAULT_KEY, message_text)
+        sanitized_enc = await encrypt_text(TEST_VAULT_KEY, message_text)  # Same for test
 
         result = await db_session.execute(text("""
             INSERT INTO chat_messages (thread_id, role, text_enc, sanitized_enc)

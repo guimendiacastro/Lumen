@@ -25,7 +25,7 @@ class TestAICompare:
     ):
         """Should return responses from all three providers."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Draft a contract")
+        message_id = await create_test_message(thread_id, message_text="Draft a contract")
 
         payload = {
             "thread_id": thread_id,
@@ -33,7 +33,8 @@ class TestAICompare:
         }
 
         response = await async_client.post("/ai/compare", json=payload)
-
+        print(f"\nStatus: {response.status_code}")
+        print(f"Response: {response.text}")
         assert response.status_code == 200
         data = response.json()
         assert "request_id" in data
@@ -59,7 +60,7 @@ class TestAICompare:
     ):
         """Should create ai_requests record."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Test request")
+        message_id = await create_test_message(thread_id, message_text="Test request")
 
         payload = {
             "thread_id": thread_id,
@@ -96,7 +97,7 @@ class TestAICompare:
     ):
         """Should encrypt and store all provider responses."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Test")
+        message_id = await create_test_message(thread_id, message_text="Test")
 
         payload = {
             "thread_id": thread_id,
@@ -142,14 +143,14 @@ class TestAICompare:
             content="This is the current document content."
         )
         thread_id = await create_test_thread(document_id=doc_id)
-        message_id = await create_test_message(thread_id, text="Revise this")
+        message_id = await create_test_message(thread_id, message_text="Revise this")
 
         payload = {
             "thread_id": thread_id,
             "message_id": message_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -188,16 +189,16 @@ class TestAICompare:
         thread_id = await create_test_thread()
 
         # Create multiple messages
-        msg1_id = await create_test_message(thread_id, text="First request")
-        msg2_id = await create_test_message(thread_id, text="Second request")
-        msg3_id = await create_test_message(thread_id, text="Third request")
+        msg1_id = await create_test_message(thread_id, message_text="First request")
+        msg2_id = await create_test_message(thread_id, message_text="Second request")
+        msg3_id = await create_test_message(thread_id, message_text="Third request")
 
         payload = {
             "thread_id": thread_id,
             "message_id": msg3_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -234,7 +235,7 @@ class TestAICompare:
     ):
         """Should allow custom system prompt."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Test")
+        message_id = await create_test_message(thread_id, message_text="Test")
 
         payload = {
             "thread_id": thread_id,
@@ -242,7 +243,7 @@ class TestAICompare:
             "system": "You are an expert in contract law."
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -294,14 +295,14 @@ class TestAICompare:
     ):
         """Should return latency information for each provider."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Test")
+        message_id = await create_test_message(thread_id, message_text="Test")
 
         payload = {
             "thread_id": thread_id,
             "message_id": message_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -380,7 +381,7 @@ class TestAICompareWithFiles:
         from app.crypto.vault import encrypt_text
 
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Analyze the file")
+        message_id = await create_test_message(thread_id, message_text="Analyze the file")
 
         # Insert small file (direct context)
         content_enc = await encrypt_text("test_key_01", "File content here")
@@ -399,7 +400,7 @@ class TestAICompareWithFiles:
             "message_id": message_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -439,7 +440,7 @@ class TestAICompareWithFiles:
         from app.crypto.vault import encrypt_text
 
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Query about document")
+        message_id = await create_test_message(thread_id, message_text="Query about document")
 
         # Insert large file (RAG indexed)
         content_enc = await encrypt_text("test_key_01", "A" * 100000)
@@ -476,7 +477,7 @@ class TestAICompareWithFiles:
             "message_id": message_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -511,7 +512,7 @@ class TestAICompareEdgeCases:
         """Should handle very long user messages."""
         thread_id = await create_test_thread()
         long_text = "Please " + ("analyze this " * 1000)
-        message_id = await create_test_message(thread_id, text=long_text)
+        message_id = await create_test_message(thread_id, message_text=long_text)
 
         payload = {
             "thread_id": thread_id,
@@ -534,7 +535,7 @@ class TestAICompareEdgeCases:
     ):
         """Should handle thread with only one message (no history)."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="First message")
+        message_id = await create_test_message(thread_id, message_text="First message")
 
         payload = {
             "thread_id": thread_id,
@@ -555,14 +556,14 @@ class TestAICompareEdgeCases:
     ):
         """Should handle partial provider failures."""
         thread_id = await create_test_thread()
-        message_id = await create_test_message(thread_id, text="Test")
+        message_id = await create_test_message(thread_id, message_text="Test")
 
         payload = {
             "thread_id": thread_id,
             "message_id": message_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             # One provider succeeds, others fail
             mock_fanout.return_value = [
                 {
@@ -606,7 +607,7 @@ class TestAICompareEdgeCases:
         """Should handle special characters in messages."""
         thread_id = await create_test_thread()
         special_text = "Draft §1: 'Contracting Parties' — €1,000 + <tags> & \"quotes\""
-        message_id = await create_test_message(thread_id, text=special_text)
+        message_id = await create_test_message(thread_id, message_text=special_text)
 
         payload = {
             "thread_id": thread_id,
@@ -633,14 +634,14 @@ class TestAICompareEdgeCases:
         doc_id = await create_test_document(content=large_content)
 
         thread_id = await create_test_thread(document_id=doc_id)
-        message_id = await create_test_message(thread_id, text="Revise")
+        message_id = await create_test_message(thread_id, message_text="Revise")
 
         payload = {
             "thread_id": thread_id,
             "message_id": message_id
         }
 
-        with patch("app.llm.clients.fanout_with_history") as mock_fanout:
+        with patch("app.routers.ai.fanout_with_history") as mock_fanout:
             mock_fanout.return_value = [
                 {
                     "provider": "openai",
@@ -667,3 +668,5 @@ class TestAICompareEdgeCases:
             assert doc_msg is not None
             # Content should be truncated to last MAX_DOC_CHARS
             assert len(doc_msg["content"]) < len(large_content)
+
+
