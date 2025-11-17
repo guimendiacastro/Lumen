@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS {schema}.chat_threads (
   document_id UUID NULL REFERENCES {schema}.documents(id) ON DELETE SET NULL,
   title TEXT,
   created_by TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS {schema}.chat_messages (
@@ -118,15 +119,6 @@ CREATE INDEX IF NOT EXISTS idx_ai_selections_request_id ON {schema}.ai_selection
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_document_id ON {schema}.uploaded_files(document_id);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_thread_id ON {schema}.uploaded_files(thread_id);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_status ON {schema}.uploaded_files(status);
-
-CREATE INDEX IF NOT EXISTS idx_file_chunks_file_id ON {schema}.file_chunks(file_id);
-CREATE INDEX IF NOT EXISTS idx_file_chunks_content_type ON {schema}.file_chunks(content_type);
-CREATE INDEX IF NOT EXISTS idx_file_chunks_is_particulars ON {schema}.file_chunks(is_particulars) WHERE is_particulars = TRUE;
-CREATE INDEX IF NOT EXISTS idx_file_chunks_page_number ON {schema}.file_chunks(page_number);
-CREATE INDEX IF NOT EXISTS idx_file_chunks_section_title ON {schema}.file_chunks(section_title) WHERE section_title IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_file_chunks_metadata ON {schema}.file_chunks USING gin(metadata);
-
-CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON {schema}.chunk_embeddings(chunk_id);
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON {schema}.audit_logs(actor);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON {schema}.audit_logs(created_at);

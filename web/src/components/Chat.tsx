@@ -1,6 +1,6 @@
 // web/src/components/Chat.tsx
 import { Box, CircularProgress, IconButton } from '@mui/material';
-import { ArrowUp, Paperclip, X } from 'lucide-react';
+import { ArrowUp, Paperclip } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
 import { useEffect, useState, useRef } from 'react';
@@ -139,7 +139,6 @@ export default function Chat() {
           <FileUpload
             threadId={threadId}
             documentId={doc?.id}
-            onClose={() => setShowUpload(false)}
           />
         </Box>
       )}

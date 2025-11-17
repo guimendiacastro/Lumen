@@ -6,10 +6,9 @@ import { Markdown } from 'tiptap-markdown';
 
 interface MarkdownDiffViewerProps {
   content: string;
-  showDiff?: boolean;
 }
 
-export default function MarkdownDiffViewer({ content, showDiff = false }: MarkdownDiffViewerProps) {
+export default function MarkdownDiffViewer({ content }: MarkdownDiffViewerProps) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({

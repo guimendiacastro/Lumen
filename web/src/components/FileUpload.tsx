@@ -1,23 +1,110 @@
-import { useState, useRef } from 'react';
-import { Box, CircularProgress, IconButton } from '@mui/material';
-import { Upload, X, File, Check, AlertCircle } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Box, CircularProgress, IconButton, LinearProgress } from '@mui/material';
+import { Upload, X, File, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
+import { useApp } from '../store';
 import type { FileUploadResponse } from '../lib/api';
+
+interface FileWithStatus extends FileUploadResponse {
+  indexed?: boolean;
+  chunk_count_actual?: number;
+  polling?: boolean;
+}
 
 interface FileUploadProps {
   threadId?: string;
   documentId?: string;
   onUploadComplete?: (files: FileUploadResponse[]) => void;
-  onClose?: () => void;
 }
 
-export default function FileUpload({ threadId, documentId, onUploadComplete, onClose }: FileUploadProps) {
+export default function FileUpload({ threadId, documentId, onUploadComplete }: FileUploadProps) {
   const { getToken } = useAuth();
+  const addUploadedFile = useApp((s) => s.addUploadedFile);
   const [uploading, setUploading] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<FileUploadResponse[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<FileWithStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadedFilesRef = useRef<FileWithStatus[]>(uploadedFiles);
+
+  useEffect(() => {
+    uploadedFilesRef.current = uploadedFiles;
+  }, [uploadedFiles]);
+
+  // Poll for indexing status with exponential backoff
+  useEffect(() => {
+    let pollInterval = 3000; // Start at 3 seconds
+    const maxInterval = 30000; // Max 30 seconds
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isActive = true;
+
+    const pollIndexingStatus = async () => {
+      if (!isActive) return;
+
+      const filesNeedingPolling = uploadedFilesRef.current.filter(
+        (f) => !f.use_direct_context && f.status === 'ready' && !f.indexed
+      );
+
+      if (filesNeedingPolling.length === 0) {
+        pollInterval = 3000; // Reset when no files to poll
+      }
+
+      if (filesNeedingPolling.length > 0) {
+        try {
+          const token = await getToken();
+          if (!token) return;
+
+          for (const file of filesNeedingPolling) {
+            const response = await fetch(
+              `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/files/${file.file_id}/status`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+
+            if (response.ok) {
+              const status = await response.json();
+              setUploadedFiles((prev) =>
+                prev.map((f) =>
+                  f.file_id === file.file_id
+                    ? {
+                        ...f,
+                        indexed: status.indexed,
+                        chunk_count_actual: status.chunk_count,
+                        polling: !status.indexed,
+                      }
+                    : f
+                )
+              );
+            }
+          }
+
+          // Exponential backoff: increase interval by 1.5x each time, max 30s
+          pollInterval = Math.min(pollInterval * 1.5, maxInterval);
+        } catch (err) {
+          console.error('Failed to poll indexing status:', err);
+        }
+      }
+
+      // Keep polling regardless of whether there was work this cycle
+      if (isActive) {
+        timeoutId = setTimeout(pollIndexingStatus, pollInterval);
+      }
+    };
+
+    // Start polling immediately
+    pollIndexingStatus();
+
+    return () => {
+      isActive = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+  }, [getToken]); // Removed uploadedFiles from deps to prevent restart on every update
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -61,6 +148,10 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
 
       const results = await Promise.all(uploadPromises);
       setUploadedFiles((prev) => [...prev, ...results]);
+
+      // Add each file to global state
+      results.forEach((file) => addUploadedFile(file));
+
       onUploadComplete?.(results);
     } catch (err: any) {
       setError(err.message || 'Failed to upload files');
@@ -119,17 +210,18 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
         onDragOver={handleDrag}
         onDrop={handleDrop}
         sx={{
-          border: dragActive ? '2px dashed #667eea' : '2px dashed #E5E7EB',
-          borderRadius: '8px',
-          p: 2,
+          border: dragActive ? '2px dashed var(--accent)' : '2px dashed var(--sand-border)',
+          borderRadius: '20px',
+          p: 3,
           textAlign: 'center',
-          background: dragActive ? '#F0F4FF' : 'white',
+          background: dragActive ? 'rgba(220,141,106,0.08)' : 'var(--card)',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
           '&:hover': {
-            borderColor: '#667eea',
-            background: '#F9FAFB',
+            borderColor: 'var(--accent)',
+            background: '#fff9f5',
           },
+          boxShadow: dragActive ? '0 20px 48px rgba(220,141,106,0.25)' : 'inset 0 1px 0 rgba(255,255,255,0.6)',
         }}
         onClick={() => fileInputRef.current?.click()}
       >
@@ -151,11 +243,11 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
           </Box>
         ) : (
           <>
-            <Upload size={28} color="#667eea" style={{ marginBottom: '8px' }} />
-            <Box sx={{ fontSize: '13px', fontWeight: 600, color: '#111827', mb: 0.5 }}>
+            <Upload size={28} color="#c7784a" style={{ marginBottom: '8px' }} />
+            <Box sx={{ fontSize: '15px', fontWeight: 600, color: 'var(--ink)', mb: 0.5 }}>
               Drop files or click to upload
             </Box>
-            <Box sx={{ fontSize: '11px', color: '#6B7280' }}>
+            <Box sx={{ fontSize: '12px', color: 'var(--muted-ink)' }}>
               PDF, DOCX, TXT, MD up to 30MB
             </Box>
           </>
@@ -168,16 +260,16 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
           sx={{
             mt: 2,
             p: 2,
-            background: '#FEF2F2',
-            border: '1px solid #FCA5A5',
-            borderRadius: '6px',
+            background: 'rgba(176, 65, 50, 0.08)',
+            border: '1px solid rgba(176, 65, 50, 0.4)',
+            borderRadius: '12px',
             display: 'flex',
             alignItems: 'center',
             gap: 1,
           }}
         >
           <AlertCircle size={16} color="#DC2626" />
-          <Box sx={{ fontSize: '13px', color: '#DC2626', fontWeight: 500 }}>
+          <Box sx={{ fontSize: '13px', color: '#b04132', fontWeight: 500 }}>
             {error}
           </Box>
         </Box>
@@ -188,9 +280,9 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
         <Box sx={{ mt: 2 }}>
           <Box
             sx={{
-              fontSize: '11px',
+              fontSize: '12px',
               fontWeight: 600,
-              color: '#6B7280',
+              color: 'var(--muted-ink)',
               mb: 1,
               textTransform: 'uppercase',
               letterSpacing: '0.5px',
@@ -206,38 +298,39 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                p: 1.5,
-                mb: 1,
-                background: '#FFFFFF',
-                border: '1px solid #E5E7EB',
-                borderRadius: '6px',
+                p: 2,
+                mb: 1.5,
+                background: 'var(--card)',
+                border: '1px solid var(--sand-border)',
+                borderRadius: '18px',
+                boxShadow: '0 14px 36px rgba(46,34,24,0.08)',
                 '&:hover': {
-                  borderColor: '#D1D5DB',
+                  borderColor: 'var(--accent)',
                 },
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
                 <Box
                   sx={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '6px',
-                    background: '#F3F4F6',
+                    width: 36,
+                    height: 36,
+                    borderRadius: '10px',
+                    background: 'var(--sand)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <File size={14} color="#6B7280" />
+                  <File size={16} color="#a0765b" />
                 </Box>
 
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box
                     sx={{
-                      fontSize: '12px',
+                      fontSize: '13px',
                       fontWeight: 600,
-                      color: '#111827',
+                      color: 'var(--ink)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -245,23 +338,47 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                   >
                     {file.filename}
                   </Box>
-                  <Box sx={{ fontSize: '10px', color: '#6B7280', mt: 0.25 }}>
+                  <Box sx={{ fontSize: '11px', color: 'var(--muted-ink)', mt: 0.5 }}>
                     {formatFileSize(file.size_bytes)}
                     {file.use_direct_context ? (
-                      <Box component="span" sx={{ ml: 1, color: '#059669', fontWeight: 600 }}>
+                      <Box component="span" sx={{ ml: 1, color: '#0d815f', fontWeight: 600 }}>
                         • Direct Context
                       </Box>
+                    ) : file.indexed ? (
+                      <Box component="span" sx={{ ml: 1, color: '#0d815f', fontWeight: 600 }}>
+                        • Indexed ({file.chunk_count_actual || 0} chunks)
+                      </Box>
                     ) : (
-                      <Box component="span" sx={{ ml: 1, color: '#2563EB', fontWeight: 600 }}>
-                        • RAG ({file.chunk_count} chunks)
+                      <Box component="span" sx={{ ml: 1, color: '#bb5142', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                        <Loader2 size={10} color="#bb5142" className="spinner" />
+                        • Indexing...
                       </Box>
                     )}
                   </Box>
+
+                  {/* Indexing Progress Bar */}
+                  {!file.use_direct_context && !file.indexed && (
+                    <Box sx={{ mt: 1 }}>
+                      <LinearProgress
+                        sx={{
+                          height: 2,
+                          borderRadius: 1,
+                          backgroundColor: 'rgba(0,0,0,0.05)',
+                          '& .MuiLinearProgress-bar': {
+                            backgroundColor: '#bb5142',
+                          },
+                        }}
+                      />
+                      <Box sx={{ fontSize: '10px', color: 'var(--muted-ink)', mt: 0.5, fontStyle: 'italic' }}>
+                        Azure is chunking and indexing your document...
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
               </Box>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                {file.status === 'ready' && (
+                {file.status === 'ready' && (file.use_direct_context || file.indexed) && (
                   <Box
                     sx={{
                       display: 'flex',
@@ -269,13 +386,32 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                       gap: 0.5,
                       px: 1.5,
                       py: 0.5,
-                      background: '#ECFDF5',
-                      borderRadius: '4px',
+                      background: 'rgba(13,129,95,0.12)',
+                      borderRadius: '999px',
                     }}
                   >
-                    <Check size={10} color="#059669" />
-                    <Box sx={{ fontSize: '10px', fontWeight: 600, color: '#059669' }}>
+                    <Check size={10} color="#0d815f" />
+                    <Box sx={{ fontSize: '10px', fontWeight: 600, color: '#0d815f' }}>
                       Ready
+                    </Box>
+                  </Box>
+                )}
+
+                {file.status === 'ready' && !file.use_direct_context && !file.indexed && (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      px: 1.5,
+                      py: 0.5,
+                      background: 'rgba(187,81,66,0.12)',
+                      borderRadius: '999px',
+                    }}
+                  >
+                    <CircularProgress size={10} sx={{ color: '#bb5142' }} />
+                    <Box sx={{ fontSize: '10px', fontWeight: 600, color: '#bb5142' }}>
+                      Indexing
                     </Box>
                   </Box>
                 )}
@@ -286,10 +422,11 @@ export default function FileUpload({ threadId, documentId, onUploadComplete, onC
                   sx={{
                     width: 20,
                     height: 20,
-                    '&:hover': { background: '#F3F4F6' },
+                    color: 'var(--muted-ink)',
+                    '&:hover': { background: 'var(--sand)', color: 'var(--ink)' },
                   }}
                 >
-                  <X size={12} color="#6B7280" />
+                  <X size={12} />
                 </IconButton>
               </Box>
             </Box>

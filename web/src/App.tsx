@@ -1,12 +1,15 @@
-import { Box, CircularProgress, Typography } from '@mui/material';
-import { UserButton } from '@clerk/clerk-react';
+import { Box, CircularProgress, Typography, IconButton } from '@mui/material';
+import { Menu } from 'lucide-react';
 import { useOnboarding } from './hooks/useOnboarding';
 import Answers from './components/Answers';
 import Editor from './components/Editor';
 import QuestionBar from './components/QuestionBar';
+import { ThreadSidebar } from './components/ThreadSidebar';
+import { useApp } from './store';
 
 export default function App() {
-  const { isLoading, isRegistered, error, schemaName } = useOnboarding();
+  const { isLoading, error } = useOnboarding();
+  const toggleSidebar = useApp((s) => s.toggleSidebar);
 
   // Show loading state
   if (isLoading) {
@@ -73,93 +76,110 @@ export default function App() {
 
   // Main app
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Top Bar */}
+    <Box sx={{ height: '100vh', display: 'flex', overflow: 'hidden', background: 'var(--sand)' }}>
+      {/* Thread Sidebar */}
+      <ThreadSidebar />
+
+      {/* Main Container */}
       <Box
         sx={{
+          flex: 1,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          px: 4,
-          py: 2.5,
-          borderBottom: '1px solid #E5E7EB',
-          background: 'white',
-          zIndex: 10,
+          flexDirection: 'column',
+          height: '100vh',
+          overflow: 'hidden',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box
+        <Box
+          sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}
+        >
+          {/* Floating Menu Button */}
+          <IconButton
+            onClick={toggleSidebar}
             sx={{
-              width: 36,
-              height: 36,
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '18px',
-              color: 'white',
+              position: 'absolute',
+              top: 20,
+              left: 20,
+              zIndex: 100,
+              width: 44,
+              height: 44,
+              borderRadius: '12px',
+              border: '1px solid var(--sand-border)',
+              background: 'var(--card)',
+              color: 'var(--ink)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+              '&:hover': {
+                background: 'var(--sand-soft)',
+                boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
+              },
             }}
           >
-            L
+            <Menu size={20} />
+          </IconButton>
+
+          {/* Main Content */}
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              px: { xs: 2, lg: 4 },
+              py: 3,
+              gap: 3,
+            }}
+          >
+            <Box
+              sx={{
+                flex: 1,
+                display: 'flex',
+                gap: 2,
+                overflow: 'hidden',
+                minHeight: 0,
+              }}
+            >
+              {/* Left: AI Answers */}
+              <Box
+                sx={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  borderRadius: '28px',
+                  border: '1px solid var(--sand-border)',
+                  background: 'var(--card)',
+                  boxShadow: '0 20px 60px rgba(51, 41, 32, 0.08)',
+                  minHeight: 0,
+                }}
+              >
+                <Answers />
+              </Box>
+
+              {/* Right: Document Editor */}
+              <Box
+                sx={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  borderRadius: '28px',
+                  border: '1px solid var(--sand-border)',
+                  background: 'var(--card)',
+                  boxShadow: '0 20px 60px rgba(51, 41, 32, 0.08)',
+                  minHeight: 0,
+                }}
+              >
+                <Editor />
+              </Box>
+            </Box>
+
+            {/* Bottom: Question Bar */}
+            <Box sx={{ flexShrink: 0 }}>
+              <QuestionBar />
+            </Box>
           </Box>
-          <Box>
-            <Typography sx={{ fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>
-              LUMEN
-            </Typography>
-            {schemaName && (
-              <Typography sx={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {schemaName}
-              </Typography>
-            )}
-          </Box>
-        </Box>
-
-        <UserButton
-          afterSignOutUrl="/"
-          appearance={{
-            elements: {
-              avatarBox: {
-                width: 36,
-                height: 36,
-              },
-            },
-          }}
-        />
-      </Box>
-
-      {/* Main Content */}
-      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Left: AI Answers */}
-        <Box
-          sx={{
-            flex: 1,
-            borderRight: '1px solid #E5E7EB',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            background: '#FAFAFA',
-          }}
-        >
-          <Answers />
-        </Box>
-
-        {/* Right: Document Editor */}
-        <Box 
-          sx={{ 
-            flex: 1, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            overflow: 'hidden' 
-          }}
-        >
-          <Editor />
         </Box>
       </Box>
-
-      {/* Bottom: Question Bar */}
-      <QuestionBar />
     </Box>
   );
 }

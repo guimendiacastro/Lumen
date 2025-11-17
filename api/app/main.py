@@ -1,4 +1,11 @@
 # lumen/api/app/main.py
+import os
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +19,24 @@ from .routers import (
     files,
     me,
     onboarding,
-    health, 
+    health,
 )
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="LUMEN API", version="1.0.0")
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Azure AI Search index on startup"""
+    try:
+        from .services.azure_rag_service import get_rag_service
+        rag_service = get_rag_service()
+        # Index is automatically initialized in __init__
+        logger.info("Azure AI Search RAG service initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Azure AI Search RAG service: {e}")
+        # Don't fail the app startup, just log the error
 
 # CORS for dev (adjust origins for prod)
 app.add_middleware(

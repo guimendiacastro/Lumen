@@ -9,6 +9,14 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --sand: #f8f5ee;
+  --sand-soft: #f3eee5;
+  --sand-border: #e4dbce;
+  --card: #fffdf9;
+  --ink: #2f2518;
+  --muted-ink: #6c5c4c;
+  --accent: #dc8d6a;
+  --accent-strong: #c06742;
 }
 
 * {
@@ -28,6 +36,8 @@ body,
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--sand);
+  color: var(--ink);
 }
 
 /* Custom Scrollbar Styles */
@@ -37,18 +47,18 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(255, 255, 255, 0.4);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(102, 126, 234, 0.3);
+  background: rgba(210, 189, 165, 0.7);
   border-radius: 10px;
   transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(102, 126, 234, 0.5);
+  background: rgba(184, 157, 126, 0.8);
 }
 
 /* Smooth transitions for all interactive elements */
@@ -70,7 +80,7 @@ button:disabled {
 
 /* Focus styles for accessibility */
 *:focus-visible {
-  outline: 2px solid #667eea;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -93,7 +103,7 @@ button:disabled {
 
 /* Utility classes */
 .gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #c7784a 0%, #a4502f 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -114,12 +124,12 @@ button:disabled {
 
 /* Selection colors */
 ::selection {
-  background: rgba(102, 126, 234, 0.3);
+  background: rgba(220, 141, 106, 0.25);
   color: inherit;
 }
 
 ::-moz-selection {
-  background: rgba(102, 126, 234, 0.3);
+  background: rgba(220, 141, 106, 0.25);
   color: inherit;
 }
 

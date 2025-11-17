@@ -54,6 +54,18 @@ export async function apiPut<T>(path: string, body: unknown, token?: string | nu
   return json<T>(res);
 }
 
+export async function apiDelete<T>(path: string, token?: string | null) {
+  const headers: HeadersInit = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers,
+  });
+  return json<T>(res);
+}
+
 // File upload function (uses FormData, not JSON)
 export async function apiPostFormData<T>(path: string, formData: FormData, token?: string | null) {
   const headers: HeadersInit = {};
@@ -87,13 +99,20 @@ export type ThreadOut = {
   id: string;
   title?: string | null;
   document_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ThreadWithMessages = ThreadOut & {
+  messages: MessageOut[];
 };
 
 export type MessageOut = {
   id: string;
   thread_id: string;
-  role: 'user' | 'system';
+  role: 'user' | 'assistant' | 'system';
   text: string;
+  ts?: string;
 };
 
 export type CompareOut = {
@@ -132,6 +151,7 @@ export type FileMetadata = {
   use_direct_context: boolean;
   chunk_count: number;
   created_at: string;
+  indexed?: boolean; // Whether chunks exist in Azure AI Search
 };
 
 // API methods with token parameter
@@ -147,10 +167,18 @@ export const api = {
     apiPut<{ ok: boolean; version: number }>(`/documents/${id}`, { content }, token),
   createThread: (title?: string, document_id?: string | null, token?: string | null) =>
     apiPost<ThreadOut>('/threads', { title, document_id: document_id ?? null }, token),
+  listThreads: (limit = 50, offset = 0, token?: string | null) =>
+    apiGet<ThreadOut[]>(`/threads?limit=${limit}&offset=${offset}`, token),
+  getThread: (threadId: string, token?: string | null) =>
+    apiGet<ThreadWithMessages>(`/threads/${threadId}`, token),
+  updateThread: (threadId: string, title: string, token?: string | null) =>
+    apiPut<ThreadOut>(`/threads/${threadId}`, { title }, token),
   postMessage: (threadId: string, content: string, token?: string | null) =>
     apiPost<MessageOut>(`/threads/${threadId}/messages`, { text: content }, token),
-  compare: (threadId: string, messageId: string, token?: string | null) =>
-    apiPost<CompareOut>('/ai/compare', { thread_id: threadId, message_id: messageId }, token),
+  getMessages: (threadId: string, token?: string | null) =>
+    apiGet<{ messages: MessageOut[] }>(`/threads/${threadId}/messages`, token),
+  compare: (threadId: string, messageId: string, token?: string | null, mode: 'edit' | 'qa' = 'edit') =>
+    apiPost<CompareOut>('/ai/compare', { thread_id: threadId, message_id: messageId, mode }, token),
   
   // FIXED: Added provider and documentId parameters
   selection: (
@@ -188,9 +216,15 @@ export const api = {
     return apiPostFormData<FileUploadResponse>('/files/upload', formData, token);
   },
   getFiles: (documentId?: string | null, threadId?: string | null, token?: string | null) => {
+    // Use the thread-specific endpoint if threadId is provided
+    if (threadId) {
+      return apiGet<FileMetadata[]>(`/files/thread/${threadId}`, token);
+    }
+    // Fallback to query params if only documentId is provided (though this endpoint may not exist)
     const params = new URLSearchParams();
     if (documentId) params.append('document_id', documentId);
-    if (threadId) params.append('thread_id', threadId);
     return apiGet<{ files: FileMetadata[] }>(`/files?${params}`, token);
   },
+  deleteFile: (fileId: string, token?: string | null) =>
+    apiDelete<{ ok: boolean }>(`/files/${fileId}`, token),
 };

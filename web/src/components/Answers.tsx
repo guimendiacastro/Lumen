@@ -5,6 +5,7 @@ import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
 import { formatDiffWithContext, getDiffStats } from '../utils/diff';
 import { renderMarkdownLine } from '../utils/markdown-renderer';
+import { ChatHistory } from './ChatHistory';
 
 const PROVIDER_LABELS: Record<string, string> = {
   openai: 'GPT-4',
@@ -22,9 +23,15 @@ export default function Answers() {
   const { getToken } = useAuth();
   const answers = useApp((s) => s.answers);
   const document = useApp((s) => s.document);
+  const baselineDocument = useApp((s) => s.baselineDocument);
+  const isLoadingAnswers = useApp((s) => s.isLoadingAnswers);
   const pickAnswer = useApp((s) => s.pickAnswer);
+  const answersMode = useApp((s) => s.answersMode);
   const [activeTab, setActiveTab] = useState(0);
   const [applying, setApplying] = useState<string | null>(null);
+
+  // Use baseline document for diff comparison if available, otherwise use current document
+  const diffBaseDocument = baselineDocument || document;
 
   const handlePick = async (card: any) => {
     setApplying(card.id);
@@ -35,6 +42,32 @@ export default function Answers() {
       setApplying(null);
     }
   };
+
+  // Loading state
+  if (isLoadingAnswers) {
+    return (
+      <Box
+        sx={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#9CA3AF',
+          px: 4,
+          textAlign: 'center',
+        }}
+      >
+        <CircularProgress size={48} sx={{ mb: 3, color: '#667eea' }} />
+        <Box sx={{ fontSize: '18px', fontWeight: 600, color: '#6B7280', mb: 1 }}>
+          Getting AI Responses
+        </Box>
+        <Box sx={{ fontSize: '14px', color: '#9CA3AF', maxWidth: '400px' }}>
+          Asking multiple AI models for their suggestions...
+        </Box>
+      </Box>
+    );
+  }
 
   // Empty state
   if (answers.length === 0) {
@@ -76,16 +109,16 @@ export default function Answers() {
     return false;
   };
 
-  // Only show diff if the original document is not a placeholder
-  const shouldShowDiff = document && !isPlaceholderDocument(document.content);
+  // Only show diff if answers were generated in edit mode and the original document is not a placeholder
+  const shouldShowDiff = answersMode === 'edit' && diffBaseDocument && !isPlaceholderDocument(diffBaseDocument.content);
 
-  // Compute diff and stats
+  // Compute diff and stats using baseline document
   const diffText = shouldShowDiff && currentAnswer
-    ? formatDiffWithContext(document.content, currentAnswer.text, 3)
+    ? formatDiffWithContext(diffBaseDocument.content, currentAnswer.text, 3)
     : currentAnswer?.text || '';
 
   const stats = shouldShowDiff && currentAnswer
-    ? getDiffStats(document.content, currentAnswer.text)
+    ? getDiffStats(diffBaseDocument.content, currentAnswer.text)
     : { added: 0, removed: 0, modified: 0 };
 
   return (
@@ -95,14 +128,19 @@ export default function Answers() {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        background: 'transparent',
+        position: 'relative',
       }}
     >
       {/* Header with Tabs */}
       <Box
         sx={{
-          borderBottom: '1px solid #E5E7EB',
-          background: 'white',
-          px: 1,
+          borderBottom: '1px solid var(--sand-border)',
+          background: 'transparent',
+          px: { xs: 2, md: 3 },
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
         }}
       >
         <Tabs
@@ -110,9 +148,11 @@ export default function Answers() {
           onChange={(_, newValue) => setActiveTab(newValue)}
           sx={{
             minHeight: '60px',
+            flex: 1,
             '& .MuiTabs-indicator': {
               height: '3px',
               borderRadius: '3px 3px 0 0',
+              backgroundColor: 'var(--accent)',
             },
           }}
         >
@@ -154,27 +194,21 @@ export default function Answers() {
             );
           })}
         </Tabs>
+        <Box sx={{ flexShrink: 0 }}>
+          <ChatHistory />
+        </Box>
       </Box>
 
       {/* Diff Stats Bar */}
       {shouldShowDiff && stats.modified > 0 && (
-        <Box
-          sx={{
-            display: 'flex',
-            gap: 2,
-            px: 3,
-            py: 2.5,
-            background: '#F9FAFB',
-            borderBottom: '1px solid #E5E7EB',
-          }}
-        >
+        <Box sx={{ display: 'flex', gap: 2, px: { xs: 3, md: 5 }, py: 2.5, background: 'var(--sand-soft)', borderBottom: '1px solid var(--sand-border)' }}>
           <Chip
             icon={<TrendingUp size={16} />}
             label={`+${stats.added} lines`}
             size="small"
             sx={{
-              background: '#ECFDF5',
-              color: '#059669',
+              background: 'rgba(13, 129, 95, 0.08)',
+              color: '#0d815f',
               fontWeight: 600,
               fontSize: '12px',
             }}
@@ -209,8 +243,9 @@ export default function Answers() {
         sx={{
           flex: 1,
           overflowY: 'auto',
-          p: 3,
-          background: 'white',
+          px: { xs: 3, md: 5 },
+          py: 4,
+          background: 'transparent',
         }}
       >
         <Box
@@ -223,16 +258,16 @@ export default function Answers() {
             mb: 2,
           }}
         >
-          {shouldShowDiff ? 'Document Changes' : 'Suggested Document'}
+          {answersMode === 'qa' ? 'Answer' : shouldShowDiff ? 'Document Changes' : 'Suggested Document'}
         </Box>
         <Box
           sx={{
             fontSize: '14px',
             lineHeight: 1.6,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            background: '#F9FAFB',
-            border: '1px solid #E5E7EB',
-            borderRadius: '8px',
+            background: 'rgba(250, 246, 238, 0.7)',
+            border: '1px solid var(--sand-border)',
+            borderRadius: '16px',
             p: 2.5,
             overflowX: 'auto',
             '& .diff-line': {
@@ -245,20 +280,20 @@ export default function Answers() {
           {shouldShowDiff ? (
             // Show diff view when document is not placeholder
             diffText.split('\n').map((line, idx) => {
-            let color = '#374151';
+            let color = 'var(--ink)';
             let background = 'transparent';
             let fontWeight = 400;
 
             if (line.startsWith('+')) {
-              color = '#059669';
-              background = '#ECFDF5';
+              color = '#0d815f';
+              background = 'rgba(13,129,95,0.08)';
               fontWeight = 500;
             } else if (line.startsWith('-')) {
-              color = '#DC2626';
-              background = '#FEF2F2';
+              color = '#bb5142';
+              background = 'rgba(187, 81, 66, 0.08)';
               fontWeight = 500;
             } else if (line.startsWith('  ')) {
-              color = '#9CA3AF';
+              color = 'var(--muted-ink)';
             }
 
             return (
@@ -304,45 +339,47 @@ export default function Answers() {
         </Box>
       </Box>
 
-      {/* Action Button */}
-      <Box
-        sx={{
-          p: 3,
-          borderTop: '1px solid #E5E7EB',
-          background: '#FAFAFA',
-          display: 'flex',
-          justifyContent: 'center',
-        }}
-      >
-        <Button
-          startIcon={isApplying ? <CircularProgress size={14} /> : <Replace size={18} />}
-          onClick={() => handlePick(currentAnswer)}
-          disabled={isApplying}
-          variant="contained"
+      {/* Action Button - Compact floating style (only if answers are from edit mode) */}
+      {answersMode === 'edit' && (
+        <Box
           sx={{
-            minWidth: '220px',
-            py: 1.5,
-            borderRadius: '10px',
-            textTransform: 'none',
-            fontWeight: 600,
-            fontSize: '14px',
-            background: providerColor,
-            color: 'white',
-            boxShadow: 'none',
-            '&:hover': {
-              background: providerColor,
-              opacity: 0.9,
-              boxShadow: 'none',
-            },
-            '&:disabled': {
-              background: '#F3F4F6',
-              color: '#9CA3AF',
-            },
+            position: 'absolute',
+            bottom: 20,
+            right: 20,
+            zIndex: 10,
           }}
         >
-          Replace Document
-        </Button>
-      </Box>
+          <Button
+            startIcon={isApplying ? <CircularProgress size={14} sx={{ color: 'white' }} /> : <Replace size={16} />}
+            onClick={() => handlePick(currentAnswer)}
+            disabled={isApplying}
+            variant="contained"
+            sx={{
+              py: 1,
+              px: 2,
+              borderRadius: '12px',
+              textTransform: 'none',
+              fontWeight: 600,
+              fontSize: '13px',
+              background: providerColor === '#6B7280' ? 'var(--accent)' : providerColor,
+              color: 'white',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+              '&:hover': {
+                background: providerColor === '#6B7280' ? 'var(--accent-strong)' : providerColor,
+                opacity: 0.9,
+                boxShadow: '0 6px 24px rgba(0,0,0,0.2)',
+              },
+              '&:disabled': {
+                background: '#F3F4F6',
+                color: '#9CA3AF',
+                boxShadow: 'none',
+              },
+            }}
+          >
+            Replace
+          </Button>
+        </Box>
+      )}
     </Box>
   );
 }

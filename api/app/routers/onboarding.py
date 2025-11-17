@@ -48,23 +48,22 @@ async def _create_vault_key(key_name: str) -> bool:
 async def _get_next_member_number() -> int:
     """Get the next available member schema number."""
     async with engine.begin() as conn:
+        # Get the maximum member number to avoid race conditions
         result = await conn.execute(
             text("""
-                SELECT schema_name FROM control.members 
+                SELECT COALESCE(MAX(
+                    CAST(
+                        SUBSTRING(schema_name FROM '^mem_([0-9]+)$')
+                        AS INTEGER
+                    )
+                ), 0) as max_num
+                FROM control.members
                 WHERE schema_name ~ '^mem_[0-9]+$'
-                ORDER BY schema_name DESC 
-                LIMIT 1
             """)
         )
         row = result.first()
-        
-        if not row:
-            return 1
-        
-        # Extract number from 'mem_XX'
-        last_schema = row[0]
-        last_num = int(last_schema.split('_')[1])
-        return last_num + 1
+        max_num = row[0] if row else 0
+        return max_num + 1
 
 
 async def _create_member_entry(org_id: str, schema_name: str, vault_key_id: str, name: str, specialization: str):
@@ -125,7 +124,7 @@ async def register_new_member(idn: Identity = Depends(get_identity)):
     4. Insert into control.members
     5. Insert into control.users
     6. Bootstrap member schema
-    
+
     This should be called automatically when a new user signs in.
     """
     # Check if already registered
@@ -137,43 +136,55 @@ async def register_new_member(idn: Identity = Depends(get_identity)):
             "schema_name": existing["schema_name"],
             "vault_key_id": existing["vault_key_id"]
         }
-    
-    # Get next member number
-    next_num = await _get_next_member_number()
-    schema_name = f"mem_{next_num:02d}"
-    vault_key_name = f"member_{next_num:02d}"
-    vault_key_id = f"transit/keys/{vault_key_name}"
-    
-    # Create Vault encryption key
-    await _create_vault_key(vault_key_name)
-    
-    # Create member entry
-    # You can customize name and specialization later via profile
-    await _create_member_entry(
-        org_id=idn.org_id,
-        schema_name=schema_name,
-        vault_key_id=vault_key_id,
-        name=f"Member {next_num}",
-        specialization="General Practice"
-    )
-    
-    # Create user entry
-    await _create_user_entry(
-        clerk_user_id=idn.user_id,
-        org_id=idn.org_id,
-        role="admin"
-    )
-    
-    # Bootstrap the schema
-    await _bootstrap_schema(schema_name)
-    
-    return {
-        "ok": True,
-        "message": "Member registered successfully",
-        "schema_name": schema_name,
-        "vault_key_id": vault_key_id,
-        "member_number": next_num
-    }
+
+    # Retry logic to handle race conditions with schema_name uniqueness
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # Get next member number
+            next_num = await _get_next_member_number()
+            schema_name = f"mem_{next_num:02d}"
+            vault_key_name = f"member_{next_num:02d}"
+            vault_key_id = f"transit/keys/{vault_key_name}"
+
+            # Create Vault encryption key
+            await _create_vault_key(vault_key_name)
+
+            # Create member entry
+            # You can customize name and specialization later via profile
+            await _create_member_entry(
+                org_id=idn.org_id,
+                schema_name=schema_name,
+                vault_key_id=vault_key_id,
+                name=f"Member {next_num}",
+                specialization="General Practice"
+            )
+
+            # Create user entry
+            await _create_user_entry(
+                clerk_user_id=idn.user_id,
+                org_id=idn.org_id,
+                role="admin"
+            )
+
+            # Bootstrap the schema
+            await _bootstrap_schema(schema_name)
+
+            return {
+                "ok": True,
+                "message": "Member registered successfully",
+                "schema_name": schema_name,
+                "vault_key_id": vault_key_id,
+                "member_number": next_num
+            }
+        except Exception as e:
+            # Check if it's a unique constraint violation on schema_name
+            if "members_schema_name_key" in str(e) and attempt < max_retries - 1:
+                # Race condition detected - retry with next number
+                continue
+            else:
+                # Some other error or max retries reached
+                raise
 
 
 @router.get("/status")

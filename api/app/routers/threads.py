@@ -21,6 +21,9 @@ class ThreadCreate(BaseModel):
     title: str | None = None
     document_id: str | None = None
 
+class ThreadUpdate(BaseModel):
+    title: str
+
 class ThreadOut(BaseModel):
     id: str
     title: str | None = None
@@ -42,12 +45,14 @@ class ThreadListItem(BaseModel):
     title: str | None = None
     document_id: str | None = None
     created_at: str
+    updated_at: str
 
 class ThreadWithMessages(BaseModel):
     id: str
     title: str | None = None
     document_id: str | None = None
     created_at: str
+    updated_at: str
     messages: List[dict]  # [{id, role, sanitized, ts}]
 
 # ---------- Helpers ----------
@@ -75,8 +80,8 @@ async def create_thread(payload: ThreadCreate, idn: Identity = Depends(get_ident
     async with member_session(schema) as s:
         res = await s.execute(
             text("""
-                INSERT INTO chat_threads (document_id, title, created_by)
-                VALUES (:doc, :title, :by)
+                INSERT INTO chat_threads (document_id, title, created_by, created_at, updated_at)
+                VALUES (:doc, :title, :by, now(), now())
                 RETURNING id, document_id, title
             """),
             {"doc": payload.document_id, "title": payload.title, "by": idn.user_id},
@@ -87,6 +92,40 @@ async def create_thread(payload: ThreadCreate, idn: Identity = Depends(get_ident
             id=str(row[0]),
             document_id=_as_str_or_none(row[1]),
             title=row[2],
+        )
+
+# ---------- Update Thread ----------
+
+@router.put("/{thread_id}", response_model=ThreadOut)
+async def update_thread(thread_id: str, payload: ThreadUpdate, idn: Identity = Depends(get_identity)):
+    mapping = await _mapping_or_404(idn)
+    schema = mapping["schema_name"]
+
+    async with member_session(schema) as s:
+        # Check if thread exists
+        chk = await s.execute(
+            text("SELECT id, document_id FROM chat_threads WHERE id = :id"),
+            {"id": thread_id}
+        )
+        row = chk.first()
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+        # Update the title
+        await s.execute(
+            text("""
+                UPDATE chat_threads
+                SET title = :title
+                WHERE id = :id
+            """),
+            {"id": thread_id, "title": payload.title}
+        )
+        await s.commit()
+
+        return ThreadOut(
+            id=str(row[0]),
+            document_id=_as_str_or_none(row[1]),
+            title=payload.title,
         )
 
 # ---------- Post Message ----------
@@ -119,9 +158,16 @@ async def post_message(thread_id: str, payload: MessageCreate, idn: Identity = D
             {"tid": thread_id, "role": payload.role, "h": raw_hash, "t": raw_enc, "ts": sanitized_enc},
         )
         mid = str(res.first()[0])
+
+        # Update thread's updated_at timestamp
+        await s.execute(
+            text("UPDATE chat_threads SET updated_at = now() WHERE id = :id"),
+            {"id": thread_id}
+        )
+
         await s.commit()
 
-        
+
 
     return MessageOut(id=mid, thread_id=thread_id, role=payload.role, text=raw)
 
@@ -142,9 +188,9 @@ async def list_threads(
     async with member_session(schema) as s:
         r = await s.execute(
             text("""
-                SELECT id, title, document_id, created_at
+                SELECT id, title, document_id, created_at, updated_at
                   FROM chat_threads
-                 ORDER BY created_at DESC, id DESC
+                 ORDER BY updated_at DESC, id DESC
                  LIMIT :limit OFFSET :offset
             """),
             {"limit": limit, "offset": offset},
@@ -157,6 +203,7 @@ async def list_threads(
             title=row[1],
             document_id=_as_str_or_none(row[2]),   # <-- cast UUID to str|None
             created_at=row[3].isoformat(),
+            updated_at=row[4].isoformat(),
         )
         for row in rows
     ]
@@ -175,7 +222,7 @@ async def get_thread_with_messages(thread_id: str, idn: Identity = Depends(get_i
     # Fetch thread
     async with member_session(schema) as s:
         t = await s.execute(
-            text("SELECT id, title, document_id, created_at FROM chat_threads WHERE id = :id"),
+            text("SELECT id, title, document_id, created_at, updated_at FROM chat_threads WHERE id = :id"),
             {"id": thread_id},
         )
         row = t.first()
@@ -210,6 +257,7 @@ async def get_thread_with_messages(thread_id: str, idn: Identity = Depends(get_i
         title=row[1],
         document_id=_as_str_or_none(row[2]),       # <-- cast here too
         created_at=row[3].isoformat(),
+        updated_at=row[4].isoformat(),
         messages=items,
     )
 

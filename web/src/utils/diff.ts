@@ -123,7 +123,6 @@ export function formatDiffWithContext(
       const showEnd = i < changes.length - 1 && changes[i + 1].type !== 'unchanged';
       
       if (showStart || showEnd) {
-        const contextCount = showStart && showEnd ? contextLines * 2 : contextLines;
         const displayLines = showStart 
           ? lines.slice(0, contextLines)
           : lines.slice(-contextLines);
