@@ -10,6 +10,8 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from unittest.mock import patch, MagicMock
 
+from ..conftest import TEST_ORG_ID, TEST_USER_ID
+
 
 class TestFileUpload:
     """Tests for file upload endpoint."""
@@ -42,6 +44,8 @@ class TestFileUpload:
         assert result["use_direct_context"] is True
         assert result["chunk_count"] == 0
         assert result["status"] == "ready"
+        assert result["library_scope"] == "direct"
+        assert result["indexed"] is True
 
     @pytest.mark.asyncio
     async def test_upload_large_file_with_rag_indexing(
@@ -69,9 +73,11 @@ class TestFileUpload:
         assert result["use_direct_context"] is False
         assert result["chunk_count"] == 5  # From mock RAG service
         assert result["status"] == "ready"
+        assert result["library_scope"] == "rag"
+        assert result["indexed"] is True
 
         # Verify RAG indexing was called
-        mock_get_rag_service.index_document.assert_called_once()
+        mock_get_rag_service.upload_document.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_upload_file_encrypts_content(
@@ -222,7 +228,7 @@ class TestFileUpload:
             )
 
             # Make RAG indexing fail
-            mock_get_rag_service.index_document.side_effect = Exception("Qdrant connection failed")
+            mock_get_rag_service.upload_document.side_effect = Exception("Qdrant connection failed")
 
             response = await async_client.post("/files/upload", files=files, data=data)
 
@@ -548,7 +554,11 @@ class TestDeleteFile:
         assert count == 0
 
         # Verify RAG delete was called
-        mock_get_rag_service.delete_file_index.assert_called_once_with(file_id)
+        mock_get_rag_service.delete_document.assert_awaited_once_with(
+            file_id=file_id,
+            org_id=TEST_ORG_ID,
+            user_id=TEST_USER_ID,
+        )
 
     @pytest.mark.asyncio
     async def test_delete_file_rag_deletion_error(
@@ -573,7 +583,7 @@ class TestDeleteFile:
         await db_session.commit()
 
         # Make RAG deletion fail
-        mock_get_rag_service.delete_file_index.side_effect = Exception("Qdrant error")
+        mock_get_rag_service.delete_document.side_effect = Exception("Qdrant error")
 
         # Should still succeed
         response = await async_client.delete(f"/files/{file_id}")
@@ -599,6 +609,54 @@ class TestDeleteFile:
 
         # Should succeed (idempotent delete)
         assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_library_upload_and_attach_flow(
+        self,
+        async_client: AsyncClient,
+        create_test_thread,
+        mock_vault,
+    ):
+        """Should support uploading to library and attaching/detaching files for threads."""
+        file_content = b"Library file content"
+        files = {"file": ("library.txt", file_content, "text/plain")}
+
+        with patch("app.services.file_processor.FileProcessor.process_file") as mock_process:
+            mock_process.return_value = MagicMock(
+                full_text="Library file content",
+                use_direct_context=True,
+                total_size=len(file_content)
+            )
+
+            response = await async_client.post("/files/library/upload", files=files)
+
+        assert response.status_code == 200
+        uploaded = response.json()
+        file_id = uploaded["file_id"]
+
+        resp = await async_client.get("/files/library")
+        assert resp.status_code == 200
+        assert any(f["id"] == file_id for f in resp.json())
+
+        thread_id = await create_test_thread()
+        attach = await async_client.post(
+            f"/files/thread/{thread_id}/files",
+            json={"file_ids": [file_id]}
+        )
+        assert attach.status_code == 200
+
+        thread_files = await async_client.get(f"/files/thread/{thread_id}")
+        assert thread_files.status_code == 200
+        payload = thread_files.json()
+        assert len(payload) == 1
+        assert payload[0]["id"] == file_id
+
+        detach = await async_client.delete(f"/files/thread/{thread_id}/files/{file_id}")
+        assert detach.status_code == 200
+
+        thread_files = await async_client.get(f"/files/thread/{thread_id}")
+        assert thread_files.status_code == 200
+        assert thread_files.json() == []
 
 
 class TestFileEdgeCases:

@@ -140,6 +140,8 @@ export type FileUploadResponse = {
   use_direct_context: boolean;
   chunk_count: number;
   status: string;
+  library_scope: 'direct' | 'rag';
+  indexed: boolean;
 };
 
 export type FileMetadata = {
@@ -152,6 +154,12 @@ export type FileMetadata = {
   chunk_count: number;
   created_at: string;
   indexed?: boolean; // Whether chunks exist in Azure AI Search
+  library_scope: 'direct' | 'rag';
+  indexed_at?: string | null;
+  attached_at?: string | null;
+  attached_threads?: number | null;
+  last_status_note?: string | null;
+  error_message?: string | null;
 };
 
 // API methods with token parameter
@@ -215,16 +223,19 @@ export const api = {
     if (threadId) formData.append('thread_id', threadId);
     return apiPostFormData<FileUploadResponse>('/files/upload', formData, token);
   },
-  getFiles: (documentId?: string | null, threadId?: string | null, token?: string | null) => {
-    // Use the thread-specific endpoint if threadId is provided
-    if (threadId) {
-      return apiGet<FileMetadata[]>(`/files/thread/${threadId}`, token);
-    }
-    // Fallback to query params if only documentId is provided (though this endpoint may not exist)
-    const params = new URLSearchParams();
-    if (documentId) params.append('document_id', documentId);
-    return apiGet<{ files: FileMetadata[] }>(`/files?${params}`, token);
+  uploadLibraryFile: (file: File, documentId?: string | null, token?: string | null) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (documentId) formData.append('document_id', documentId);
+    return apiPostFormData<FileUploadResponse>('/files/library/upload', formData, token);
   },
+  getFiles: (threadId: string, token?: string | null) =>
+    apiGet<FileMetadata[]>(`/files/thread/${threadId}`, token),
+  listLibraryFiles: (token?: string | null) => apiGet<FileMetadata[]>('/files/library', token),
+  attachThreadFiles: (threadId: string, fileIds: string[], token?: string | null) =>
+    apiPost<{ status: string; file_ids: string[] }>(`/files/thread/${threadId}/files`, { file_ids: fileIds }, token),
+  detachThreadFile: (threadId: string, fileId: string, token?: string | null) =>
+    apiDelete<{ status: string }>(`/files/thread/${threadId}/files/${fileId}`, token),
   deleteFile: (fileId: string, token?: string | null) =>
-    apiDelete<{ ok: boolean }>(`/files/${fileId}`, token),
+    apiDelete<{ status: string }>(`/files/${fileId}`, token),
 };

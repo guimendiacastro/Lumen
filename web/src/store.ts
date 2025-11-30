@@ -21,6 +21,10 @@ type FileItem = {
   use_direct_context: boolean;
   chunk_count: number;
   indexed?: boolean;
+  library_scope?: 'direct' | 'rag';
+  indexed_at?: string | null;
+  attached_at?: string | null;
+  last_status_note?: string | null;
 };
 
 type InteractionMode = 'edit' | 'qa';
@@ -255,27 +259,27 @@ export const useApp = create<State & Actions>((set, get) => ({
       status: file.status,
       use_direct_context: file.use_direct_context,
       chunk_count: file.chunk_count,
-      indexed: false, // Initially false, will be updated by polling
+      indexed: file.indexed,
+      library_scope: file.library_scope,
     };
     set({ uploadedFiles: [...uploadedFiles, fileItem] });
   },
 
   async removeUploadedFile(fileId: string, token?: string | null) {
-    await api.deleteFile(fileId, token);
-    const { uploadedFiles } = get();
+    const { threadId, uploadedFiles } = get();
+    if (!threadId) return;
+    await api.detachThreadFile(threadId, fileId, token);
     set({ uploadedFiles: uploadedFiles.filter((f) => f.file_id !== fileId) });
   },
 
   async loadFiles(token?: string | null) {
-    const { threadId, document } = get();
+    const { threadId } = get();
     if (!threadId) return;
     if (!token) {
       console.warn('[store.loadFiles] Missing auth token, skipping file fetch');
       return;
     }
-    const result = await api.getFiles(document?.id, threadId, token);
-    // Handle both array and object responses
-    const files = Array.isArray(result) ? result : result.files;
+    const files = await api.getFiles(threadId, token);
     const fileItems: FileItem[] = files.map((f) => ({
       file_id: f.id,
       filename: f.filename,
@@ -283,7 +287,11 @@ export const useApp = create<State & Actions>((set, get) => ({
       status: f.status,
       use_direct_context: f.use_direct_context,
       chunk_count: f.chunk_count,
-      indexed: f.indexed, // Include indexed status from backend
+      indexed: f.indexed,
+      library_scope: f.library_scope,
+      indexed_at: f.indexed_at,
+      attached_at: f.attached_at,
+      last_status_note: f.last_status_note,
     }));
     set({ uploadedFiles: fileItems });
   },

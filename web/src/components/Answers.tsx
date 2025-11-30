@@ -113,8 +113,9 @@ export default function Answers() {
   const shouldShowDiff = answersMode === 'edit' && diffBaseDocument && !isPlaceholderDocument(diffBaseDocument.content);
 
   // Compute diff and stats using baseline document
+  // Use 1 line of context to reduce showing unrelated changes
   const diffText = shouldShowDiff && currentAnswer
-    ? formatDiffWithContext(diffBaseDocument.content, currentAnswer.text, 3)
+    ? formatDiffWithContext(diffBaseDocument.content, currentAnswer.text, 1)
     : currentAnswer?.text || '';
 
   const stats = shouldShowDiff && currentAnswer

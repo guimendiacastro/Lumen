@@ -201,6 +201,7 @@ async def test_engine():
                 content_enc BYTEA NOT NULL,
                 status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'failed')),
                 error_message TEXT,
+                use_direct_context BOOLEAN,
                 created_by TEXT NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 processed_at TIMESTAMPTZ
@@ -421,15 +422,15 @@ def mock_rag_service():
     Mock RAG service for file processing tests.
 
     Returns an AsyncMock with common methods:
-    - index_document: Returns number of chunks (5 by default)
-    - retrieve: Returns list of mock chunks
-    - delete_file_index: Returns None
+    - upload_document: Returns number of chunks (5 by default)
+    - search_documents: Returns list of mock chunks
+    - delete_document: Returns None
     """
     mock_service = AsyncMock()
 
     # Configure default return values
-    mock_service.index_document.return_value = 5  # 5 chunks indexed
-    mock_service.retrieve.return_value = [
+    mock_service.upload_document.return_value = {"chunk_count": 5, "note": "Indexed"}
+    mock_service.search_documents.return_value = [
         {
             "text": "Sample chunk 1 content",
             "score": 0.95,
@@ -441,7 +442,12 @@ def mock_rag_service():
             "metadata": {"page": 2}
         }
     ]
-    mock_service.delete_file_index.return_value = None
+    mock_service.delete_document.return_value = None
+    mock_service.get_document_status.return_value = {
+        "indexed": True,
+        "chunk_count": 5,
+        "note": "Indexed",
+    }
 
     return mock_service
 
@@ -449,7 +455,7 @@ def mock_rag_service():
 @pytest.fixture
 def mock_get_rag_service(mock_rag_service):
     """Mock the get_rag_service function to return mock RAG service."""
-    with patch("app.services.rag_service.get_rag_service", return_value=mock_rag_service):
+    with patch("app.services.azure_rag_service.get_rag_service", return_value=mock_rag_service):
         yield mock_rag_service
 
 

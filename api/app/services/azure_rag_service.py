@@ -66,6 +66,8 @@ class DocumentChunk:
     token_count: int
     char_start: int
     char_end: int
+    section_header: Optional[str] = None
+    page_number: Optional[int] = None
 
 
 class LocalChunker:
@@ -79,12 +81,7 @@ class LocalChunker:
     def chunk_text(self, text: str) -> List[DocumentChunk]:
         """
         Chunk text using semantic boundaries and token-based splitting.
-
-        Strategy:
-        1. Split on paragraph boundaries first (double newlines)
-        2. Combine paragraphs up to chunk_size tokens
-        3. Add overlap by including last chunk_overlap tokens from previous chunk
-        4. If single paragraph exceeds chunk_size, split by sentences
+        Now supports Markdown header tracking for better context.
         """
         chunks = []
 
@@ -96,12 +93,25 @@ class LocalChunker:
         char_position = 0
         chunk_start_char = 0
         chunk_index = 0
-        previous_overlap_tokens = []
+        current_header = None
+        
+        # Helper to check for headers
+        def get_header(text: str) -> Optional[str]:
+            lines = text.split('\n')
+            for line in lines:
+                if line.strip().startswith('#'):
+                    return line.strip().lstrip('#').strip()
+            return None
 
         for para in paragraphs:
             para = para.strip()
             if not para:
                 continue
+            
+            # Check if paragraph contains a header
+            new_header = get_header(para)
+            if new_header:
+                current_header = new_header
 
             para_tokens = self.encoding.encode(para)
             para_token_count = len(para_tokens)
@@ -116,7 +126,8 @@ class LocalChunker:
                         chunk_index=chunk_index,
                         token_count=current_tokens,
                         char_start=chunk_start_char,
-                        char_end=char_position
+                        char_end=char_position,
+                        section_header=current_header
                     ))
                     chunk_index += 1
 
@@ -138,7 +149,8 @@ class LocalChunker:
                             chunk_index=chunk_index,
                             token_count=sentence_tokens,
                             char_start=sentence_start,
-                            char_end=char_position
+                            char_end=char_position,
+                            section_header=current_header
                         ))
                         chunk_index += 1
 
@@ -160,7 +172,8 @@ class LocalChunker:
                         chunk_index=chunk_index,
                         token_count=sentence_tokens,
                         char_start=sentence_start,
-                        char_end=char_position
+                        char_end=char_position,
+                        section_header=current_header
                     ))
                     chunk_index += 1
 
@@ -178,7 +191,8 @@ class LocalChunker:
                     chunk_index=chunk_index,
                     token_count=current_tokens,
                     char_start=chunk_start_char,
-                    char_end=char_position
+                    char_end=char_position,
+                    section_header=current_header
                 ))
                 chunk_index += 1
 
@@ -203,7 +217,8 @@ class LocalChunker:
                 chunk_index=chunk_index,
                 token_count=current_tokens,
                 char_start=chunk_start_char,
-                char_end=char_position
+                char_end=char_position,
+                section_header=current_header
             ))
 
         log.info(f"Chunked text into {len(chunks)} chunks (avg {sum(c.token_count for c in chunks) / len(chunks) if chunks else 0:.0f} tokens/chunk)")
@@ -267,10 +282,10 @@ class AzureRAGService:
             # Try to get existing index
             existing_index = self.index_client.get_index(AZURE_SEARCH_INDEX_NAME)
 
-            # Check if index has the correct schema (check for 'id' field)
-            has_id_field = any(field.name == "id" for field in existing_index.fields)
+            # Check if index has the correct schema (check for 'page_number' field)
+            has_new_schema = any(field.name == "page_number" for field in existing_index.fields)
 
-            if not has_id_field:
+            if not has_new_schema:
                 log.warning(f"Index {AZURE_SEARCH_INDEX_NAME} has old schema. Deleting and recreating...")
                 self.index_client.delete_index(AZURE_SEARCH_INDEX_NAME)
                 raise ResourceNotFoundError("Index deleted, will recreate")
@@ -289,6 +304,8 @@ class AzureRAGService:
                 SearchableField(name="content", type=SearchFieldDataType.String),
                 SimpleField(name="chunk_index", type=SearchFieldDataType.Int32),
                 SimpleField(name="token_count", type=SearchFieldDataType.Int32),
+                SimpleField(name="page_number", type=SearchFieldDataType.Int32, filterable=True),
+                SearchableField(name="section_header", type=SearchFieldDataType.String, filterable=True),
                 SearchField(
                     name="content_vector",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
@@ -448,6 +465,8 @@ class AzureRAGService:
                 "content": chunk.content,
                 "chunk_index": chunk.chunk_index,
                 "token_count": chunk.token_count,
+                "page_number": chunk.page_number,
+                "section_header": chunk.section_header,
                 "content_vector": embedding
             }
             documents.append(doc)
@@ -517,7 +536,7 @@ class AzureRAGService:
                 vector_queries=[vector_query],
                 filter=filter_str,
                 top=top_k,
-                select=["file_id", "filename", "content", "chunk_index", "token_count"]
+                select=["file_id", "filename", "content", "chunk_index", "token_count", "page_number", "section_header"]
             )
 
             chunks = []
@@ -528,6 +547,8 @@ class AzureRAGService:
                     "content": result["content"],
                     "chunk_index": result["chunk_index"],
                     "token_count": result["token_count"],
+                    "page_number": result.get("page_number"),
+                    "section_header": result.get("section_header"),
                     "score": result.get("@search.score", 0)
                 })
 

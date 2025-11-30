@@ -100,43 +100,79 @@ export function getDiffStats(oldText: string, newText: string) {
  * Format diff with context (shows unchanged lines around changes)
  */
 export function formatDiffWithContext(
-  oldText: string, 
-  newText: string, 
+  oldText: string,
+  newText: string,
   contextLines: number = 3
 ): string {
   const changes = computeLineDiff(oldText, newText);
-  
+
   if (changes.every(c => c.type === 'unchanged')) {
     return '✓ No changes detected - documents are identical';
   }
-  
+
   let output = '';
-  let lastWasChange = false;
-  
+  let inChangeBlock = false;
+
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i];
     const lines = change.value.split('\n').filter(l => l.length > 0);
-    
+
     if (change.type === 'unchanged') {
-      // Show context lines before and after changes
-      const showStart = lastWasChange && i > 0;
-      const showEnd = i < changes.length - 1 && changes[i + 1].type !== 'unchanged';
-      
-      if (showStart || showEnd) {
-        const displayLines = showStart 
-          ? lines.slice(0, contextLines)
-          : lines.slice(-contextLines);
-        
-        for (const line of displayLines) {
-          output += `  ${line}\n`;
+      const prevWasChange = i > 0 && changes[i - 1].type !== 'unchanged';
+      const nextIsChange = i < changes.length - 1 && changes[i + 1].type !== 'unchanged';
+
+      if (prevWasChange || nextIsChange) {
+        // Check if this is a very small gap between changes (likely part of same logical change)
+        const isSmallGap = lines.length <= 2;
+
+        if (prevWasChange && nextIsChange) {
+          if (isSmallGap) {
+            // Show all lines for small gaps - they're part of the same edit
+            for (const line of lines) {
+              output += `  ${line}\n`;
+            }
+          } else if (lines.length <= contextLines * 2) {
+            // Show all lines if gap is small enough
+            for (const line of lines) {
+              output += `  ${line}\n`;
+            }
+          } else {
+            // Show context around both changes with ellipsis for large gaps
+            const contextStart = lines.slice(0, contextLines);
+            for (const line of contextStart) {
+              output += `  ${line}\n`;
+            }
+
+            const hiddenCount = lines.length - contextLines * 2;
+            output += `  ... (${hiddenCount} unchanged lines)\n`;
+
+            const contextEnd = lines.slice(-contextLines);
+            for (const line of contextEnd) {
+              output += `  ${line}\n`;
+            }
+          }
+        } else if (prevWasChange) {
+          // After a change - minimal context
+          if (lines.length > 0) {
+            // Only show first line as context
+            output += `  ${lines[0]}\n`;
+          }
+
+          // Show ellipsis only if there's a significant gap
+          if (lines.length > contextLines + 5) {
+            const hiddenCount = lines.length - 1;
+            output += `  ... (${hiddenCount} unchanged lines)\n`;
+          }
+
+          inChangeBlock = false;
+        } else if (nextIsChange) {
+          // Before a change - don't show context
+          // (we only care about what changed, not what comes before)
+          inChangeBlock = true;
         }
-        
-        if (lines.length > contextLines * 2) {
-          output += `  ... (${lines.length - contextLines * 2} unchanged lines)\n`;
-        }
+      } else {
+        inChangeBlock = false;
       }
-      
-      lastWasChange = false;
     } else {
       // Show all added/removed lines
       for (const line of lines) {
@@ -146,11 +182,11 @@ export function formatDiffWithContext(
           output += `- ${line}\n`;
         }
       }
-      
-      lastWasChange = true;
+
+      inChangeBlock = true;
     }
   }
-  
+
   return output.trim();
 }
 

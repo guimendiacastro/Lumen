@@ -3,23 +3,23 @@
 Azure Document Intelligence OCR Service
 
 This service uses Azure Document Intelligence (formerly Form Recognizer) to perform
-OCR on scanned PDFs and images. It automatically extracts text while preserving
-document layout, tables, and structure.
+OCR on scanned PDFs and images. It uses the 'prebuilt-layout' model to extract
+text while preserving document structure (tables, headers, selection marks) and
+outputs Markdown content.
 
 Features:
 - Automatic OCR for scanned documents
-- Multi-language support (60+ languages)
-- Table and structure preservation
-- High accuracy text extraction
+- Layout preservation (tables, headers)
+- Markdown output format
+- Multi-language support
 """
 
 import os
-import io
 import logging
 from typing import Optional
-from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
-from azure.core.exceptions import HttpResponseError
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.ai.documentintelligence.models import AnalyzeResult, AnalyzeDocumentRequest
 
 log = logging.getLogger("lumen.ocr")
 
@@ -40,70 +40,53 @@ class AzureOCRService:
                 "environment variables."
             )
 
-        self.client = DocumentAnalysisClient(
+        self.client = DocumentIntelligenceClient(
             endpoint=AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
             credential=AzureKeyCredential(AZURE_DOCUMENT_INTELLIGENCE_KEY)
         )
 
     async def extract_text_with_ocr(self, content: bytes) -> str:
         """
-        Extract text from PDF using Azure Document Intelligence OCR.
+        Extract text from PDF using Azure Document Intelligence 'prebuilt-layout' model.
+        Returns Markdown formatted text.
 
         Args:
             content: PDF file content as bytes
 
         Returns:
-            Extracted text with preserved structure
+            Extracted text in Markdown format
 
         Raises:
             ValueError: If OCR extraction fails
         """
         try:
-            log.info("Starting Azure Document Intelligence OCR processing")
+            log.info("Starting Azure Document Intelligence OCR processing (prebuilt-layout)")
 
-            # Convert bytes to file-like object
-            pdf_stream = io.BytesIO(content)
-
-            # Use prebuilt-read model for general document OCR
-            # This model is optimized for text extraction from any document type
+            # Begin analysis
+            # Note: The SDK handles the polling automatically with begin_analyze_document
             poller = self.client.begin_analyze_document(
-                model_id="prebuilt-read",
-                document=pdf_stream
+                model_id="prebuilt-layout",
+                analyze_request=AnalyzeDocumentRequest(base64_source=content),
+                output_content_format="markdown"  # Request Markdown output
             )
 
             # Wait for the analysis to complete
-            result = poller.result()
+            result: AnalyzeResult = poller.result()
 
-            # Extract text from all pages
-            text_parts = []
+            # Return the full markdown content
+            if result.content:
+                log.info(
+                    f"OCR extraction completed. "
+                    f"Pages: {len(result.pages) if result.pages else 0}, "
+                    f"Characters: {len(result.content)}"
+                )
+                return result.content
+            else:
+                log.warning("OCR extraction returned no content.")
+                return ""
 
-            for page in result.pages:
-                # Extract lines of text from each page
-                page_lines = []
-                for line in page.lines:
-                    page_lines.append(line.content)
-
-                # Join lines with newlines and add page separator
-                if page_lines:
-                    page_text = '\n'.join(page_lines)
-                    text_parts.append(page_text)
-
-            # Join all pages with double newlines
-            extracted_text = '\n\n'.join(text_parts)
-
-            log.info(
-                f"OCR extraction completed. "
-                f"Pages: {len(result.pages)}, "
-                f"Characters: {len(extracted_text)}"
-            )
-
-            return extracted_text
-
-        except HttpResponseError as e:
-            log.error(f"Azure Document Intelligence API error: {str(e)}")
-            raise ValueError(f"OCR extraction failed: {str(e)}")
         except Exception as e:
-            log.error(f"Unexpected error during OCR: {str(e)}")
+            log.error(f"Azure Document Intelligence error: {str(e)}")
             raise ValueError(f"OCR extraction failed: {str(e)}")
 
     @staticmethod

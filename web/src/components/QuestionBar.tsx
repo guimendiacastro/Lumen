@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
-import { Box, CircularProgress, IconButton, Typography, Collapse } from '@mui/material';
-import { ArrowUp, Paperclip, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Box, CircularProgress, IconButton, Typography, Collapse, Button, Modal } from '@mui/material';
+import { ArrowUp, Paperclip, CheckCircle2, ChevronDown, ChevronUp, Folder, Plus, X } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
 import FileChip from './FileChip';
+import { api, type FileMetadata } from '../lib/api';
 
 export default function QuestionBar() {
   const { getToken } = useAuth();
@@ -23,13 +24,16 @@ export default function QuestionBar() {
   const setInteractionMode = useApp((s) => s.setInteractionMode);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLibraryUploading, setIsLibraryUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const uploadedFilesRef = useRef(uploadedFiles);
   const hasPendingUploads = uploadedFiles.some(
     (f) => !f.use_direct_context && !f.indexed
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
   const completionTimer = useRef<NodeJS.Timeout | null>(null);
   const hadUploadsRef = useRef(false);
   const [showCompletion, setShowCompletion] = useState(false);
@@ -37,6 +41,9 @@ export default function QuestionBar() {
     const saved = localStorage.getItem('lumen-files-expanded');
     return saved !== null ? JSON.parse(saved) : true;
   });
+  const [isLibraryExplorerOpen, setLibraryExplorerOpen] = useState(false);
+  const [libraryFiles, setLibraryFiles] = useState<FileMetadata[]>([]);
+  const [isLibraryLoading, setIsLibraryLoading] = useState(false);
 
   useEffect(() => {
     uploadedFilesRef.current = uploadedFiles;
@@ -79,6 +86,24 @@ export default function QuestionBar() {
     })();
   }, [getToken, init]);
 
+  const loadLibraryFiles = useCallback(async () => {
+    try {
+      setIsLibraryLoading(true);
+      setLibraryError(null);
+      const token = await getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+      const files = await api.listLibraryFiles(token);
+      setLibraryFiles(files);
+    } catch (err: any) {
+      console.error('[QuestionBar] Failed to load library files', err);
+      setLibraryError(err.message || 'Failed to load documents');
+    } finally {
+      setIsLibraryLoading(false);
+    }
+  }, [getToken]);
+
   // Load files when thread changes
   useEffect(() => {
     if (threadId) {
@@ -92,6 +117,12 @@ export default function QuestionBar() {
       })();
     }
   }, [threadId, getToken, loadFiles]);
+
+  useEffect(() => {
+    if (isLibraryExplorerOpen) {
+      loadLibraryFiles();
+    }
+  }, [isLibraryExplorerOpen, loadLibraryFiles]);
 
   // Poll for indexing status with exponential backoff
   useEffect(() => {
@@ -152,7 +183,7 @@ export default function QuestionBar() {
   }, [input]);
 
   const handleAsk = async () => {
-    if (!input.trim() || isLoading || hasPendingUploads || isUploading) return;
+    if (!input.trim() || isLoading || hasPendingUploads || isUploading || isLibraryUploading) return;
     setIsLoading(true);
     const token = await getToken();
     await askAI(token);
@@ -183,6 +214,13 @@ export default function QuestionBar() {
     localStorage.setItem('lumen-files-expanded', JSON.stringify(newValue));
   };
 
+  const openLibraryExplorer = () => {
+    setLibraryExplorerOpen(true);
+  };
+  const closeLibraryExplorer = () => {
+    setLibraryExplorerOpen(false);
+  };
+
   const ensureThreadExists = async () => {
     if (!threadId) {
       const token = await getToken();
@@ -197,6 +235,7 @@ export default function QuestionBar() {
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    await ensureThreadExists();
 
     setIsUploading(true);
     setUploadError(null);
@@ -209,31 +248,17 @@ export default function QuestionBar() {
 
       const currentThreadId = useApp.getState().threadId;
       const currentDocumentId = useApp.getState().document?.id;
+      if (!currentThreadId) {
+        throw new Error('Thread not initialized');
+      }
 
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        if (currentThreadId) formData.append('thread_id', currentThreadId);
-        if (currentDocumentId) formData.append('document_id', currentDocumentId);
-
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/files/upload`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.detail || 'Upload failed');
-        }
-
-        return await response.json();
-      });
+      const uploadPromises = Array.from(files).map((file) =>
+        api.uploadFile(file, currentDocumentId, currentThreadId, token)
+      );
 
       const results = await Promise.all(uploadPromises);
       results.forEach((file) => addUploadedFile(file));
+      await loadFiles(token);
     } catch (err: any) {
       console.error('Failed to upload files:', err);
       setUploadError(err.message || 'Failed to upload files');
@@ -242,6 +267,57 @@ export default function QuestionBar() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleLibraryUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    setIsLibraryUploading(true);
+    setLibraryError(null);
+
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const currentDocumentId = useApp.getState().document?.id;
+      await Promise.all(Array.from(files).map((file) => api.uploadLibraryFile(file, currentDocumentId, token)));
+      await loadLibraryFiles();
+    } catch (err: any) {
+      console.error('Failed to upload library files:', err);
+      setLibraryError(err.message || 'Failed to upload files');
+    } finally {
+      setIsLibraryUploading(false);
+      if (libraryInputRef.current) {
+        libraryInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleAttachFromLibrary = async (fileId: string) => {
+    await ensureThreadExists();
+    const token = await getToken();
+    if (!token) return;
+    const currentThreadId = useApp.getState().threadId;
+    if (!currentThreadId) return;
+    await api.attachThreadFiles(currentThreadId, [fileId], token);
+    await loadFiles(token);
+  };
+
+  const handleDeleteLibraryFile = async (fileId: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await api.deleteFile(fileId, token);
+      await loadLibraryFiles();
+      if (threadId) {
+        await loadFiles(token);
+      }
+    } catch (err) {
+      console.error('Failed to delete library file', err);
+      setLibraryError('Failed to delete file');
     }
   };
 
@@ -278,7 +354,7 @@ export default function QuestionBar() {
     );
   }
 
-  const showStatusPill = uploadError || isUploading || hasPendingUploads || showCompletion;
+  const showStatusPill = uploadError || isUploading || isLibraryUploading || hasPendingUploads || showCompletion;
 
   const getStatusContent = () => {
     if (uploadError) {
@@ -291,7 +367,7 @@ export default function QuestionBar() {
       };
     }
 
-    if (isUploading) {
+    if (isUploading || isLibraryUploading) {
       return {
         color: 'var(--muted-ink)',
         borderColor: 'var(--sand-border)',
@@ -444,6 +520,43 @@ export default function QuestionBar() {
           </Box>
         )}
 
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 1,
+            mb: 2,
+            alignItems: 'flex-start',
+          }}
+        >
+          <Button
+            variant="contained"
+            size="small"
+            onClick={handleFileSelect}
+            disabled={isLoading}
+            sx={{
+              textTransform: 'none',
+              background: 'var(--ink)',
+              '&:hover': { background: '#111111' },
+            }}
+          >
+            Upload to this conversation
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<Folder size={14} />}
+            onClick={openLibraryExplorer}
+            sx={{
+              textTransform: 'none',
+              background: isLibraryExplorerOpen ? 'var(--sand-soft)' : 'transparent',
+            }}
+          >
+            My Documents
+          </Button>
+        </Box>
+
         {showStatusPill && (
           <Box
             sx={{
@@ -530,7 +643,7 @@ export default function QuestionBar() {
                   ? 'Ask a question about your document...'
                   : 'How can AI help with your document?'
               }
-              disabled={isLoading || hasPendingUploads || isUploading}
+              disabled={isLoading || hasPendingUploads || isUploading || isLibraryUploading}
               style={{
                 width: '100%',
                 border: 'none',
@@ -558,15 +671,15 @@ export default function QuestionBar() {
             <IconButton
               size="small"
               onClick={handleAsk}
-              disabled={!input.trim() || isLoading || hasPendingUploads || isUploading}
+              disabled={!input.trim() || isLoading || hasPendingUploads || isUploading || isLibraryUploading}
               sx={{
                 width: 42,
                 height: 42,
                 borderRadius: '14px',
-                background: input.trim() && !isLoading && !hasPendingUploads && !isUploading ? 'var(--accent)' : 'var(--sand-soft)',
-                color: input.trim() && !isLoading && !hasPendingUploads && !isUploading ? '#FFFFFF' : 'var(--muted-ink)',
+                background: input.trim() && !isLoading && !hasPendingUploads && !isUploading && !isLibraryUploading ? 'var(--accent)' : 'var(--sand-soft)',
+                color: input.trim() && !isLoading && !hasPendingUploads && !isUploading && !isLibraryUploading ? '#FFFFFF' : 'var(--muted-ink)',
                 '&:hover': {
-                  background: input.trim() && !isLoading && !hasPendingUploads && !isUploading ? 'var(--accent-strong)' : 'var(--sand)',
+                  background: input.trim() && !isLoading && !hasPendingUploads && !isUploading && !isLibraryUploading ? 'var(--accent-strong)' : 'var(--sand)',
                 },
                 '&:disabled': {
                   background: 'var(--sand-soft)',
@@ -587,6 +700,185 @@ export default function QuestionBar() {
           style={{ display: 'none' }}
           onChange={(e) => handleUpload(e.target.files)}
         />
+        <input
+          ref={libraryInputRef}
+          type="file"
+          multiple
+          accept=".txt,.md,.pdf,.docx,.doc"
+          style={{ display: 'none' }}
+          onChange={(e) => handleLibraryUpload(e.target.files)}
+        />
+        <Modal
+          open={isLibraryExplorerOpen}
+          onClose={closeLibraryExplorer}
+          closeAfterTransition={false}
+          keepMounted
+          slotProps={{
+            backdrop: {
+              sx: {
+                backdropFilter: 'blur(4px)',
+                backgroundColor: 'rgba(18,15,11,0.55)',
+              },
+            },
+          }}
+        >
+          <Box
+            role="dialog"
+            aria-modal="true"
+            sx={{
+              width: { xs: '100%', sm: 'min(640px, 95%)', md: 'min(820px, 90%)' },
+              maxHeight: { xs: '90vh', md: '80vh' },
+              background: '#ffffff',
+              borderRadius: '28px',
+              boxShadow: '0 35px 85px rgba(0,0,0,0.25)',
+              border: '1px solid var(--sand-border)',
+              display: 'flex',
+              flexDirection: 'column',
+              p: { xs: 2.5, md: 3 },
+              gap: 2,
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 2,
+              }}
+            >
+              <Box>
+                <Typography sx={{ fontSize: '18px', fontWeight: 700 }}>My Documents</Typography>
+                <Typography sx={{ fontSize: '13px', color: 'var(--muted-ink)', mt: 0.5 }}>
+                  Attach saved files or upload new ones to use in any chat.
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <IconButton
+                  size="small"
+                  onClick={() => libraryInputRef.current?.click()}
+                  disabled={isLibraryUploading}
+                  sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '14px',
+                    background: 'var(--sand)',
+                    '&:hover': { background: 'var(--sand-soft)' },
+                  }}
+                >
+                  {isLibraryUploading ? <CircularProgress size={18} /> : <Plus size={18} />}
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={closeLibraryExplorer}
+                  sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '14px',
+                    background: 'var(--sand)',
+                    '&:hover': { background: 'var(--sand-soft)' },
+                  }}
+                >
+                  <X size={16} />
+                </IconButton>
+              </Box>
+            </Box>
+
+            {libraryError && (
+              <Typography sx={{ fontSize: '13px', color: '#b04132' }}>
+                {libraryError}
+              </Typography>
+            )}
+
+            <Box
+              sx={{
+                flex: 1,
+                overflow: 'hidden',
+                borderRadius: '20px',
+                border: '1px solid var(--sand-border)',
+                background: 'rgba(249,247,243,0.8)',
+              }}
+            >
+              {isLibraryLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                  <CircularProgress size={22} />
+                </Box>
+              ) : libraryFiles.length === 0 ? (
+                <Box sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography sx={{ fontSize: '15px', fontWeight: 600, mb: 1 }}>
+                    No documents yet
+                  </Typography>
+                  <Typography sx={{ fontSize: '13px', color: 'var(--muted-ink)' }}>
+                    Add files to your personal library so you can attach them to any conversation.
+                  </Typography>
+                </Box>
+              ) : (
+                <Box sx={{ maxHeight: { xs: '60vh', md: 'calc(80vh - 160px)' }, overflowY: 'auto' }}>
+                  {libraryFiles.map((file) => {
+                    const canAttach = file.status === 'ready';
+                    return (
+                      <Box
+                        key={file.id}
+                        sx={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 1,
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          px: 3,
+                          py: 2,
+                          borderBottom: '1px solid rgba(0,0,0,0.05)',
+                          '&:last-of-type': { borderBottom: 'none' },
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontSize: '15px', fontWeight: 600 }}>
+                            {file.filename}
+                          </Typography>
+                          <Typography sx={{ fontSize: '12px', color: 'var(--muted-ink)' }}>
+                            {file.library_scope === 'direct'
+                              ? 'Direct context'
+                              : `${file.chunk_count} chunks`} · {file.status}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            disabled={!canAttach || isLibraryLoading}
+                            onClick={() => handleAttachFromLibrary(file.id)}
+                            sx={{
+                              textTransform: 'none',
+                              background: canAttach ? 'var(--accent)' : 'var(--sand)',
+                              color: canAttach ? '#fff' : 'var(--muted-ink)',
+                              '&:hover': {
+                                background: canAttach ? 'var(--accent-strong)' : 'var(--sand-soft)',
+                              },
+                            }}
+                          >
+                            Attach
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="text"
+                            color="error"
+                            onClick={() => handleDeleteLibraryFile(file.id)}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            Delete
+                          </Button>
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
+          </Box>
+        </Modal>
     </Box>
   );
 }

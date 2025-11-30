@@ -122,11 +122,51 @@ async def _current_document_block(schema: str, key_id: str, thread_id: str) -> s
 
 async def _get_file_context(schema: str, key_id: str, thread_id: str) -> str:
     """
-    With Azure AI Search, we no longer include full file content.
-    All file retrieval is handled by RAG (Azure chunks, embeds, and retrieves).
-    This function is kept for backwards compatibility but returns empty string.
+    Load direct context files (small files with use_direct_context=True).
+    These files have their full content included in the prompt.
+    Large files are handled by RAG (_get_rag_context).
     """
-    return ""
+    # Query for small files marked for direct context
+    async with member_session(schema) as s:
+        result = await s.execute(
+            text("""
+                SELECT f.id, f.filename, f.content_enc
+                FROM uploaded_files f
+                WHERE f.use_direct_context = true
+                  AND f.status = 'ready'
+                  AND (
+                      EXISTS (
+                          SELECT 1 FROM thread_files tf
+                          WHERE tf.thread_id = :tid AND tf.file_id = f.id
+                      )
+                      OR f.thread_id = :tid
+                  )
+                ORDER BY f.created_at ASC
+            """),
+            {"tid": thread_id}
+        )
+        files = result.all()
+
+    if not files:
+        return ""
+
+    # Build the file context block
+    file_blocks = []
+    for file_id, filename, content_enc in files:
+        try:
+            # Decrypt file content
+            content = await decrypt_text(key_id, content_enc)
+            # Add to the block with proper XML formatting
+            file_blocks.append(f"<file name='{filename}'>\n{content}\n</file>")
+        except Exception as e:
+            log.warning(f"Failed to decrypt file {file_id} ({filename}): {e}")
+            continue
+
+    if not file_blocks:
+        return ""
+
+    # Wrap all files in uploaded_files tag
+    return "<uploaded_files>\n" + "\n".join(file_blocks) + "\n</uploaded_files>"
 
 
 async def _get_rag_context(
@@ -142,13 +182,21 @@ async def _get_rag_context(
     """
     Retrieve RAG context using Azure AI Search with security filtering.
     """
-    # Find files in this thread
+    # Find RAG-indexed files in this thread (exclude direct context files)
     async with member_session(schema) as s:
         result = await s.execute(
             text("""
-                SELECT id, filename
-                FROM uploaded_files
-                WHERE thread_id = :tid AND status = 'ready'
+                SELECT f.id, f.filename
+                FROM uploaded_files f
+                WHERE f.status = 'ready'
+                  AND (f.use_direct_context = false OR f.use_direct_context IS NULL)
+                  AND (
+                      EXISTS (
+                          SELECT 1 FROM thread_files tf
+                          WHERE tf.thread_id = :tid AND tf.file_id = f.id
+                      )
+                      OR f.thread_id = :tid
+                  )
             """),
             {"tid": thread_id}
         )
@@ -181,7 +229,18 @@ async def _get_rag_context(
             filename = chunk.get("filename", "unknown")
             score = chunk.get("score", 0)
             content = chunk.get("content", "")
-            rag_text += f"[Chunk {i} from {filename}] (relevance: {score:.2f})\n"
+            section_header = chunk.get("section_header")
+            page_number = chunk.get("page_number")
+            
+            # Build citation header
+            citation = f"[Chunk {i} from {filename}]"
+            if page_number:
+                citation += f" [Page {page_number}]"
+            if section_header:
+                citation += f" [Section: {section_header}]"
+            citation += f" (relevance: {score:.2f})"
+            
+            rag_text += f"{citation}\n"
             rag_text += f"{content}\n\n"
 
         rag_text += "</retrieved_context>"

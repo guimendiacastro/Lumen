@@ -18,7 +18,7 @@ from app.services.azure_ocr_service import get_ocr_service, AzureOCRService
 
 log = logging.getLogger("lumen.file_processor")
 
-MAX_DIRECT_CONTEXT_CHARS = 50000
+MAX_DIRECT_CONTEXT_CHARS = 500000
 
 
 @dataclass
@@ -70,7 +70,7 @@ class FileProcessor:
             if needs_ocr:
                 log.info(
                     f"PDF appears to be scanned (avg {avg_chars_per_page:.1f} chars/page). "
-                    f"Attempting OCR extraction..."
+                    f"Attempting OCR extraction (prebuilt-layout)..."
                 )
 
                 # Check if OCR is available

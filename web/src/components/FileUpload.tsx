@@ -6,7 +6,6 @@ import { useApp } from '../store';
 import type { FileUploadResponse } from '../lib/api';
 
 interface FileWithStatus extends FileUploadResponse {
-  indexed?: boolean;
   chunk_count_actual?: number;
   polling?: boolean;
 }
