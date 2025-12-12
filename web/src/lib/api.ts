@@ -132,6 +132,16 @@ export type SelectionOut = {
   new_version: number;
 };
 
+export type ImprovePromptOut = {
+  original: string;
+  improved: string;
+  changes: string[];
+  missing_info: string[];
+  confidence: 'high' | 'medium' | 'low';
+  timestamp: string;
+  error?: string;
+};
+
 // File upload types
 export type FileUploadResponse = {
   file_id: string;
@@ -187,7 +197,23 @@ export const api = {
     apiGet<{ messages: MessageOut[] }>(`/threads/${threadId}/messages`, token),
   compare: (threadId: string, messageId: string, token?: string | null, mode: 'edit' | 'qa' = 'edit') =>
     apiPost<CompareOut>('/ai/compare', { thread_id: threadId, message_id: messageId, mode }, token),
-  
+
+  improvePrompt: (
+    prompt: string,
+    documentType?: string | null,
+    threadId?: string | null,
+    token?: string | null
+  ) =>
+    apiPost<ImprovePromptOut>(
+      '/ai/improve-prompt',
+      {
+        prompt,
+        document_type: documentType,
+        thread_id: threadId,
+      },
+      token
+    ),
+
   // FIXED: Added provider and documentId parameters
   selection: (
     requestId: string,

@@ -11,226 +11,233 @@ if (!clerkPubKey) {
   console.warn('VITE_CLERK_PUBLISHABLE_KEY is missing');
 }
 
-function SignInPage() {
+export function SignInPage() {
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background:
+          'radial-gradient(circle at 16% 24%, rgba(220, 141, 106, 0.18), transparent 32%), radial-gradient(circle at 82% 12%, rgba(192, 103, 66, 0.14), transparent 26%), linear-gradient(135deg, #fdf8f1 0%, #f3e9dc 42%, #f8f5ee 100%)',
+        color: 'var(--ink)',
         position: 'relative',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3), transparent 50%), radial-gradient(circle at 80% 80%, rgba(138, 43, 226, 0.15), transparent 50%)',
-          pointerEvents: 'none',
-        },
+        px: { xs: 2, md: 4 },
+        py: { xs: 4, md: 8 },
       }}
     >
-      <Container maxWidth="lg">
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          background:
+            'radial-gradient(circle at 50% 65%, rgba(255, 255, 255, 0.5), transparent 36%), radial-gradient(circle at 12% 90%, rgba(220, 141, 106, 0.08), transparent 24%)',
+          pointerEvents: 'none',
+        }}
+      />
+      <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-            gap: 4,
-            alignItems: 'center',
+            gridTemplateColumns: { xs: '1fr', md: '1.05fr 0.95fr' },
+            gap: { xs: 2.5, md: 3 },
+            alignItems: 'stretch',
           }}
         >
-          {/* Left side - Branding */}
-          <Box sx={{ color: 'white', position: 'relative', zIndex: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
+          <Box
+            sx={{
+              background: 'var(--card)',
+              borderRadius: '28px',
+              border: '1px solid var(--sand-border)',
+              boxShadow: '0 22px 60px rgba(51, 41, 32, 0.12)',
+              p: { xs: 3, md: 4 },
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2.5,
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                background:
+                  'radial-gradient(circle at 20% 10%, rgba(220, 141, 106, 0.12), transparent 30%), radial-gradient(circle at 90% 70%, rgba(192, 103, 66, 0.08), transparent 26%)',
+                pointerEvents: 'none',
+              }}
+            />
+            <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Box
                 sx={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: '16px',
-                  background: 'rgba(255, 255, 255, 0.2)',
-                  backdropFilter: 'blur(10px)',
+                  width: 52,
+                  height: 52,
+                  borderRadius: '14px',
+                  background: 'var(--card)',
+                  border: '1px solid var(--sand-border)',
+                  boxShadow: '0 14px 36px rgba(51, 41, 32, 0.12)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontWeight: 800,
-                  fontSize: '28px',
-                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  fontSize: '22px',
+                  color: 'var(--accent-strong)',
                 }}
               >
                 L
               </Box>
               <Box>
-                <Typography variant="h3" sx={{ fontWeight: 800, letterSpacing: '-1px' }}>
-                  LUMEN
+                <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.5px' }}>
+                  Lumen
                 </Typography>
-                <Typography sx={{ fontSize: '12px', letterSpacing: '2px', opacity: 0.9, fontWeight: 600 }}>
-                  AI-POWERED WORKSPACE
+                <Typography sx={{ fontSize: '12px', letterSpacing: '1.5px', textTransform: 'uppercase', color: 'var(--muted-ink)', fontWeight: 600 }}>
+                  Document Intelligence
                 </Typography>
               </Box>
             </Box>
 
-            <Typography variant="h4" sx={{ fontWeight: 700, mb: 2, lineHeight: 1.3 }}>
-              Your AI-Powered Document Assistant
-            </Typography>
-            <Typography sx={{ fontSize: '18px', mb: 4, opacity: 0.9, lineHeight: 1.6 }}>
-              Collaborate with multiple AI models to draft, edit, and refine your documents with unprecedented speed and quality.
-            </Typography>
+            <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Typography variant="h3" sx={{ fontWeight: 800, lineHeight: 1.05, letterSpacing: '-0.6px' }}>
+                A calm place to ask and write.
+              </Typography>
+              <Typography sx={{ color: 'var(--muted-ink)', fontSize: '16px', maxWidth: 520 }}>
+                Keep chat and docs side-by-side. Sign in to pick up where you left off.
+              </Typography>
+            </Box>
 
-            {/* Features */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box
+              sx={{
+                position: 'relative',
+                zIndex: 1,
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+                gap: 1,
+              }}
+            >
               {[
-                { icon: Sparkles, text: 'Compare responses from OpenAI, Anthropic & xAI' },
-                { icon: FileText, text: 'Real-time collaborative document editing' },
-                { icon: Zap, text: 'Lightning-fast AI-powered drafting' },
-                { icon: Shield, text: 'Secure and private by default' },
-              ].map(({ icon: Icon, text }, idx) => (
+                { icon: Sparkles, text: 'Multi-model answers' },
+                { icon: FileText, text: 'Document-aware replies' },
+                { icon: Shield, text: 'Clerk-secured' },
+              ].map(({ icon: Icon, text }) => (
                 <Box
-                  key={idx}
+                  key={text}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 2,
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    backdropFilter: 'blur(10px)',
-                    padding: 2,
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    gap: 1,
+                    padding: 1.5,
+                    borderRadius: '14px',
+                    background: 'var(--sand-soft)',
+                    border: '1px solid var(--sand-border)',
+                    boxShadow: '0 10px 26px rgba(51, 41, 32, 0.08)',
                   }}
                 >
                   <Box
                     sx={{
-                      width: 40,
-                      height: 40,
+                      width: 32,
+                      height: 32,
                       borderRadius: '10px',
-                      background: 'rgba(255, 255, 255, 0.2)',
+                      background: 'var(--card)',
+                      border: '1px solid var(--sand-border)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      color: 'var(--accent-strong)',
+                      flexShrink: 0,
                     }}
                   >
-                    <Icon size={20} />
+                    <Icon size={18} />
                   </Box>
-                  <Typography sx={{ fontSize: '15px', fontWeight: 500 }}>
-                    {text}
-                  </Typography>
+                  <Typography sx={{ fontWeight: 600, fontSize: '13px', color: 'var(--muted-ink)' }}>{text}</Typography>
                 </Box>
               ))}
             </Box>
           </Box>
 
-          {/* Right side - Sign In Card */}
+          {/* Sign In Card */}
           <Box
             sx={{
+              background: 'rgba(255, 253, 249, 0.92)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '24px',
+              padding: { xs: 3, md: 4 },
+              boxShadow: '0 22px 60px rgba(51, 41, 32, 0.14)',
+              border: '1px solid var(--sand-border)',
               position: 'relative',
-              zIndex: 1,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              alignSelf: 'center',
             }}
           >
             <Box
               sx={{
-                background: 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(20px)',
-                borderRadius: '24px',
-                padding: 5,
-                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
+                position: 'absolute',
+                inset: 0,
+                background:
+                  'radial-gradient(circle at 80% 0%, rgba(220, 141, 106, 0.12), transparent 35%), radial-gradient(circle at 10% 80%, rgba(192, 103, 66, 0.08), transparent 30%)',
+                pointerEvents: 'none',
               }}
-            >
-              <Box sx={{ textAlign: 'center', mb: 4 }}>
-                <Typography variant="h4" sx={{ fontWeight: 800, mb: 1, color: '#1a1a1a' }}>
-                  Welcome Back
-                </Typography>
-                <Typography sx={{ color: '#666', fontSize: '15px' }}>
-                  Sign in to access your AI workspace
-                </Typography>
-              </Box>
-
-              <SignInButton mode="modal">
-                <Button
-                  variant="contained"
-                  fullWidth
-                  sx={{
-                    py: 2,
-                    borderRadius: '12px',
-                    textTransform: 'none',
-                    fontSize: '16px',
-                    fontWeight: 700,
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    boxShadow: '0 8px 24px rgba(102, 126, 234, 0.4)',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-                      boxShadow: '0 12px 32px rgba(102, 126, 234, 0.5)',
-                      transform: 'translateY(-2px)',
-                    },
-                    transition: 'all 0.3s ease',
-                  }}
-                >
-                  Sign In with Clerk
-                </Button>
-              </SignInButton>
-
-              <Box sx={{ mt: 4, textAlign: 'center' }}>
-                <Typography sx={{ fontSize: '13px', color: '#999', mb: 2 }}>
-                  Trusted by professionals worldwide
-                </Typography>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    gap: 3,
-                    opacity: 0.6,
-                  }}
-                >
-                  {['OpenAI', 'Anthropic', 'xAI'].map(provider => (
-                    <Box
-                      key={provider}
-                      sx={{
-                        px: 2,
-                        py: 1,
-                        background: 'rgba(0, 0, 0, 0.05)',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: '#666',
-                      }}
-                    >
-                      {provider}
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
+            />
+            <Box sx={{ position: 'relative', zIndex: 1 }}>
+              <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>
+                Sign in
+              </Typography>
+              <Typography sx={{ color: 'var(--muted-ink)' }}>
+                Continue to Lumen with your account.
+              </Typography>
             </Box>
 
-            {/* Floating elements for visual interest */}
+            <SignInButton mode="modal">
+              <Button
+                variant="contained"
+                fullWidth
+                sx={{
+                  py: 2,
+                  borderRadius: '14px',
+                  textTransform: 'none',
+                  fontSize: '16px',
+                  fontWeight: 800,
+                  background: 'linear-gradient(135deg, #dc8d6a 0%, #c06742 100%)',
+                  boxShadow: '0 12px 28px rgba(192, 103, 66, 0.4)',
+                  color: '#fffdf9',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #c06742 0%, #a75131 100%)',
+                    boxShadow: '0 14px 34px rgba(192, 103, 66, 0.45)',
+                    transform: 'translateY(-1px)',
+                  },
+                  transition: 'all 0.25s ease',
+                }}
+              >
+                Enter with Clerk
+              </Button>
+            </SignInButton>
+
             <Box
               sx={{
-                position: 'absolute',
-                top: -20,
-                right: -20,
-                width: 100,
-                height: 100,
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(10px)',
-                zIndex: -1,
+                position: 'relative',
+                zIndex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1.5,
+                color: 'var(--muted-ink)',
+                fontSize: '13px',
+                flexWrap: 'wrap',
               }}
-            />
-            <Box
-              sx={{
-                position: 'absolute',
-                bottom: -30,
-                left: -30,
-                width: 150,
-                height: 150,
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(10px)',
-                zIndex: -1,
-              }}
-            />
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
+                Secure by Clerk
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
+                Private by default
+              </Box>
+            </Box>
           </Box>
         </Box>
       </Container>
@@ -238,7 +245,7 @@ function SignInPage() {
   );
 }
 
-function Root() {
+export function Root() {
   return (
     <ClerkProvider publishableKey={clerkPubKey}>
       <SignedIn>

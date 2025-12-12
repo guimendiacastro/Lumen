@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Box, CircularProgress, IconButton, Typography, Collapse, Button, Modal } from '@mui/material';
-import { ArrowUp, Paperclip, CheckCircle2, ChevronDown, ChevronUp, Folder, Plus, X } from 'lucide-react';
+import { Box, CircularProgress, IconButton, Typography, Collapse, Button, Modal, Tooltip } from '@mui/material';
+import { ArrowUp, Paperclip, CheckCircle2, ChevronDown, ChevronUp, Folder, Plus, X, Sparkles } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useApp } from '../store';
 import FileChip from './FileChip';
-import { api, type FileMetadata } from '../lib/api';
+import { api, type FileMetadata, type ImprovePromptOut } from '../lib/api';
 
 export default function QuestionBar() {
   const { getToken } = useAuth();
@@ -44,6 +44,8 @@ export default function QuestionBar() {
   const [isLibraryExplorerOpen, setLibraryExplorerOpen] = useState(false);
   const [libraryFiles, setLibraryFiles] = useState<FileMetadata[]>([]);
   const [isLibraryLoading, setIsLibraryLoading] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizationResult, setOptimizationResult] = useState<ImprovePromptOut | null>(null);
 
   useEffect(() => {
     uploadedFilesRef.current = uploadedFiles;
@@ -188,6 +190,38 @@ export default function QuestionBar() {
     const token = await getToken();
     await askAI(token);
     setIsLoading(false);
+  };
+
+  const handleOptimize = async () => {
+    if (!input.trim() || isOptimizing || isLoading) return;
+
+    setIsOptimizing(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      // Call the improve-prompt API
+      const result = await api.improvePrompt(
+        input,
+        null, // document_type - we can infer this later if needed
+        threadId || null,
+        token
+      );
+
+      // Update the input with the improved version
+      setInput(result.improved);
+      setOptimizationResult(result);
+
+      // Optional: You could show a toast notification here
+      console.log('Prompt improved:', result.changes);
+    } catch (error) {
+      console.error('Failed to optimize prompt:', error);
+      // Optional: Show error toast
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -665,9 +699,41 @@ export default function QuestionBar() {
             sx={{
               display: 'flex',
               alignItems: 'center',
+              gap: 1,
               height: '40px',
             }}
           >
+            {/* Improve Prompt Button */}
+            <Tooltip title="Improve prompt for better results" arrow>
+              <IconButton
+                size="small"
+                onClick={handleOptimize}
+                disabled={!input.trim() || isOptimizing || isLoading || hasPendingUploads || isUploading || isLibraryUploading}
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '14px',
+                  background: 'var(--sand)',
+                  color: 'var(--muted-ink)',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    background: 'var(--sand-soft)',
+                    color: 'var(--accent)',
+                  },
+                  '&:disabled': {
+                    opacity: 0.4,
+                  },
+                }}
+              >
+                {isOptimizing ? (
+                  <CircularProgress size={16} sx={{ color: 'var(--muted-ink)' }} />
+                ) : (
+                  <Sparkles size={16} />
+                )}
+              </IconButton>
+            </Tooltip>
+
+            {/* Send Button */}
             <IconButton
               size="small"
               onClick={handleAsk}

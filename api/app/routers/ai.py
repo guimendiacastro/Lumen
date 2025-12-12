@@ -49,6 +49,19 @@ class CompareOut(BaseModel):
     request_id: str
     providers: list[ProviderCard]
 
+class ImprovePromptIn(BaseModel):
+    prompt: str
+    document_type: str | None = None
+    thread_id: str | None = None
+
+class ImprovePromptOut(BaseModel):
+    original: str
+    improved: str
+    changes: list[str]
+    missing_info: list[str]
+    confidence: str
+    timestamp: str
+
 
 async def _mapping_or_404(idn: Identity):
     mapping = await fetch_member_mapping(idn.org_id)
@@ -492,3 +505,56 @@ async def compare(body: CompareIn, idn: Identity = Depends(get_identity)):
     total_time = time.time() - start_time
     log.info(f"[/ai/compare] Request completed in {total_time:.2f}s total")
     return CompareOut(request_id=request_id, providers=provider_cards)
+
+
+@router.post("/improve-prompt", response_model=ImprovePromptOut)
+async def improve_prompt(body: ImprovePromptIn, idn: Identity = Depends(get_identity)):
+    """
+    Optimize a user's prompt for legal document generation using Claude's Self-Refine pattern.
+
+    This endpoint analyzes the user's input and suggests improvements specifically
+    tailored for legal document generation, ensuring clarity, completeness, and legal precision.
+
+    Args:
+        body: Request containing the prompt to optimize, optional document type, and thread ID
+        idn: User identity from authentication
+
+    Returns:
+        ImprovePromptOut with the original, improved prompt, list of changes, and metadata
+    """
+    import time
+    start_time = time.time()
+    log.info(f"[/ai/improve-prompt] Starting optimization for thread_id={body.thread_id}")
+
+    # Import the prompt optimizer service
+    from ..services.prompt_optimizer import get_optimizer_service
+
+    # Get database session for context lookup (if thread_id provided)
+    session = None
+    if body.thread_id:
+        mapping = await _mapping_or_404(idn)
+        schema = mapping["schema_name"]
+        # Create session context manager
+        async with member_session(schema) as s:
+            # Call the optimizer service
+            optimizer = get_optimizer_service()
+            result = await optimizer.improve_prompt(
+                user_prompt=body.prompt,
+                document_type=body.document_type,
+                thread_id=body.thread_id,
+                session=s
+            )
+    else:
+        # No thread context needed
+        optimizer = get_optimizer_service()
+        result = await optimizer.improve_prompt(
+            user_prompt=body.prompt,
+            document_type=body.document_type,
+            thread_id=None,
+            session=None
+        )
+
+    total_time = time.time() - start_time
+    log.info(f"[/ai/improve-prompt] Optimization completed in {total_time:.2f}s")
+
+    return ImprovePromptOut(**result)
